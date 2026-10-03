@@ -31,11 +31,24 @@ specification.
 ## Running it
 
     cp .env.example .env     # fill in your own values
-    docker compose up --build
+    docker compose up --build -d
+
+Three containers: PostgreSQL, the backend, and nginx serving the app and
+proxying `/api`. Only the last one publishes a port, on `127.0.0.1` by
+default, so you put your own TLS in front of it.
 
 The application creates one parent account at first startup from
-`APP_ADMIN_USER` and `APP_ADMIN_PASSWORD`. Everything else is created in the
-app.
+`APP_ADMIN_USER` and `APP_ADMIN_PASSWORD`, and refuses to start if they are
+missing. Everything else is created in the app.
+
+`docs/DEPLOY.md` covers TLS, backups, updating and what to look at when
+something is wrong.
+
+## Working on it
+
+    cd backend  && ./mvnw verify          # build and test, needs Docker
+    cd frontend && npm ci && npm test
+    cd frontend && npm start              # dev server on :4200
 
 ## Status
 

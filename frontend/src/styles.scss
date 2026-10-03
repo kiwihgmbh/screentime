@@ -1,0 +1,45 @@
+@use '@angular/material' as mat;
+
+html {
+  @include mat.theme(
+    (
+      color: (
+        primary: mat.$azure-palette,
+        tertiary: mat.$green-palette,
+      ),
+      typography: Roboto,
+      density: 0,
+    )
+  );
+  color-scheme: light dark;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--mat-sys-surface);
+  color: var(--mat-sys-on-surface);
+  font-family: Roboto, 'Helvetica Neue', sans-serif;
+  // this runs on an iPad where a stray horizontal scroll is easy to trigger
+  // and hard to get rid of
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+}
+
+h2 {
+  font-size: 1.25rem;
+  font-weight: 400;
+  margin: 4px 0 12px;
+}
+
+h3 {
+  font-size: 1rem;
+  font-weight: 500;
+  margin: 0 0 8px;
+}
+
+// the form fields in this app are always full width inside their own grid cell
+.mat-mdc-form-field {
+  width: 100%;
+}

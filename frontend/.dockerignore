@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.angular/
+coverage/
+out-tsc/
+src/locale/
+.env
+.env.*
+!.env.example
+*.log
+.vscode/

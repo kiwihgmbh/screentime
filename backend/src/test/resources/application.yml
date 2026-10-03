@@ -1,0 +1,20 @@
+# Tests get their datasource from Testcontainers via @ServiceConnection.
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+
+app:
+  timezone: Europe/Zurich
+  admin:
+    username: test-parent
+    password: test-only-not-a-real-secret
+  jwt:
+    secret: test-only-secret-not-used-in-any-deployment-0123456789
+    ttl-days: 30

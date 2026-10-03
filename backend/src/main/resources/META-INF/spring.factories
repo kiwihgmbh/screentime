@@ -1,0 +1,6 @@
+# The guard runs before any bean is created, and the analyzer prints its
+# message as a short block instead of a stack trace.
+org.springframework.context.ApplicationContextInitializer=\
+com.kiwih.screentime.config.ConfigurationGuard
+org.springframework.boot.diagnostics.FailureAnalyzer=\
+com.kiwih.screentime.config.MissingConfigurationFailureAnalyzer

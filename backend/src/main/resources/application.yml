@@ -1,0 +1,68 @@
+spring:
+  application:
+    name: screentime
+
+  datasource:
+    url: ${DB_URL}
+    username: ${POSTGRES_USER}
+    password: ${POSTGRES_PASSWORD}
+    hikari:
+      maximum-pool-size: 5
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      # Flyway owns the schema. Hibernate only checks that it matches the
+      # entities and never changes it.
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  jackson:
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+
+app:
+  # Every calendar decision is made in this zone. Instants are stored in UTC.
+  timezone: ${APP_TIMEZONE:Europe/Zurich}
+  public-url: ${APP_PUBLIC_URL:http://localhost:4200}
+  admin:
+    # No defaults on purpose. The application refuses to start without these.
+    username: ${APP_ADMIN_USER:}
+    password: ${APP_ADMIN_PASSWORD:}
+  jwt:
+    secret: ${JWT_SECRET:}
+    ttl-days: ${JWT_TTL_DAYS:30}
+
+server:
+  port: ${SERVER_PORT:8080}
+  forward-headers-strategy: framework
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # health and nothing else. This repository is public and the app is
+        # reachable from the internet in most deployments.
+        include: health
+  endpoint:
+    health:
+      # a probe needs to know up or down, not what the database is called
+      show-details: never
+      probes:
+        enabled: true
+
+logging:
+  level:
+    org.flywaydb: info

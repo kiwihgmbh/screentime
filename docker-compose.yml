@@ -1,0 +1,77 @@
+# The whole stack: database, backend, frontend.
+#
+#   cp .env.example .env     # fill in your own values
+#   docker compose up --build
+#
+# Every secret comes from .env, which is not in the repository. The compose
+# file below contains no credential and no host name, because this repository
+# is public and other families use it.
+
+name: screentime
+
+services:
+  screentime-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      # the calendar lives in the application, but logs and pg_dump output are
+      # easier to read in the family's own zone
+      TZ: ${APP_TIMEZONE:-Europe/Zurich}
+    volumes:
+      - screentime-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    # not published: only the backend needs to reach it. Uncomment to connect
+    # a client from the host, and remember that it is then exposed.
+    # ports:
+    #   - "127.0.0.1:5432:5432"
+
+  screentime-backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    depends_on:
+      screentime-db:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://screentime-db:5432/${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      JWT_TTL_DAYS: ${JWT_TTL_DAYS:-30}
+      # the application refuses to start without these, on purpose
+      APP_ADMIN_USER: ${APP_ADMIN_USER:?set APP_ADMIN_USER in .env}
+      APP_ADMIN_PASSWORD: ${APP_ADMIN_PASSWORD:?set APP_ADMIN_PASSWORD in .env}
+      APP_TIMEZONE: ${APP_TIMEZONE:-Europe/Zurich}
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL:-http://localhost:8080}
+      # the scheduler closes forgotten sessions at 23:59 local time, so the
+      # container's clock has to agree with the family's
+      TZ: ${APP_TIMEZONE:-Europe/Zurich}
+    # not published either: the frontend proxies /api over this network, so
+    # there is one door into the application instead of two
+    expose:
+      - "8080"
+
+  screentime-frontend:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    depends_on:
+      screentime-backend:
+        condition: service_healthy
+    environment:
+      TZ: ${APP_TIMEZONE:-Europe/Zurich}
+    ports:
+      # bound to localhost by default: put a reverse proxy with TLS in front
+      # rather than exposing this to the network. See docs/DEPLOY.md.
+      - "${APP_BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-8080}:8080"
+
+volumes:
+  screentime-db-data:

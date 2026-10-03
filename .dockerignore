@@ -1,0 +1,14 @@
+# the compose builds use ./backend and ./frontend as their contexts, each with
+# its own .dockerignore. This one keeps a root level build from sending
+# everything if anyone ever adds one.
+.git/
+.idea/
+.env
+.env.*
+!.env.example
+backend/target/
+frontend/node_modules/
+frontend/dist/
+frontend/.angular/
+docs/
+*.log
