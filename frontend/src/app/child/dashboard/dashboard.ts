@@ -2,6 +2,7 @@ import { Component, OnDestroy, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
+import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
@@ -28,6 +29,7 @@ import { SessionListComponent } from '../../shared/session-list';
   imports: [
     FormsModule,
     MatCardModule,
+    MatCheckboxModule,
     MatButtonModule,
     MatIconModule,
     MatSelectModule,
@@ -142,6 +144,20 @@ import { SessionListComponent } from '../../shared/session-list';
       color: var(--mat-sys-on-surface);
     }
 
+    .checklist h3 {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .checklist mat-checkbox {
+      display: block;
+    }
+    .checklist .aside {
+      font-size: 0.8rem;
+      color: var(--mat-sys-on-surface-variant);
+      margin: 4px 0 0;
+    }
+
     .notice {
       display: flex;
       gap: 8px;
@@ -179,13 +195,32 @@ import { SessionListComponent } from '../../shared/session-list';
       >
     } @else if (account(); as a) {
       <div class="stack">
+        <!-- shown every time the page opens, not only before the first start of the day -->
+        @if (a.checklist.length > 0) {
+          <mat-card class="checklist" data-testid="checklist"
+            ><mat-card-content>
+              <h3><mat-icon>checklist</mat-icon><span i18n>Before screen time</span></h3>
+              @for (item of a.checklist; track item.id) {
+                <mat-checkbox
+                  [checked]="isTicked(item.id)"
+                  (change)="tick(item.id, $event.checked)"
+                  >{{ item.text }}</mat-checkbox
+                >
+              }
+              <p class="aside" i18n>
+                Tick each one before screen time starts. They come back every time.
+              </p>
+            </mat-card-content></mat-card
+          >
+        }
+
         <!-- the number the week is spent against -->
         <div class="headline">
           <div class="label" i18n>Left this week</div>
           <div class="value" [class.none]="a.balance.remainingWeekSeconds === 0">
-            {{ a.balance.remainingWeekSeconds | duration }}
+            {{ a.balance.remainingWeekSeconds | duration: 'compact' }}
           </div>
-          <div class="of" i18n>of {{ a.balance.weeklyBudgetSeconds | duration }}</div>
+          <div class="of" i18n>of {{ a.balance.weeklyBudgetSeconds | duration: 'compact' }}</div>
         </div>
 
         <app-day-strip [days]="a.week" />
@@ -193,13 +228,15 @@ import { SessionListComponent } from '../../shared/session-list';
         <div class="pair">
           <mat-card class="tile"
             ><mat-card-content>
-              <div class="n">{{ a.balance.remainingTodaySeconds | duration }}</div>
-              <div class="t" i18n>Left today, of {{ a.balance.dailyCapSeconds | duration }}</div>
+              <div class="n">{{ a.balance.remainingTodaySeconds | duration: 'compact' }}</div>
+              <div class="t" i18n>
+                Left today, of {{ a.balance.dailyCapSeconds | duration: 'compact' }}
+              </div>
             </mat-card-content></mat-card
           >
           <mat-card class="tile"
             ><mat-card-content>
-              <div class="n">{{ a.balance.remainingQuickSeconds | duration }}</div>
+              <div class="n">{{ a.balance.remainingQuickSeconds | duration: 'compact' }}</div>
               <div class="t" i18n>Looking things up</div>
             </mat-card-content></mat-card
           >
@@ -276,10 +313,14 @@ import { SessionListComponent } from '../../shared/session-list';
                 matButton="filled"
                 class="wide"
                 (click)="start()"
-                [disabled]="busy() || !deviceId()"
+                [disabled]="busy() || !deviceId() || checklistOpen()"
               >
-                <mat-icon>play_arrow</mat-icon>
-                <span i18n>Start</span>
+                <mat-icon>{{ checklistOpen() ? 'checklist' : 'play_arrow' }}</mat-icon>
+                @if (checklistOpen()) {
+                  <span i18n>Tick the checklist first</span>
+                } @else {
+                  <span i18n>Start</span>
+                }
               </button>
 
               <div class="row">
@@ -297,7 +338,7 @@ import { SessionListComponent } from '../../shared/session-list';
                   matButton
                   class="wide"
                   (click)="book()"
-                  [disabled]="busy() || !deviceId() || !manualMinutes()"
+                  [disabled]="busy() || !deviceId() || !manualMinutes() || checklistOpen()"
                 >
                   <span i18n>Book</span>
                 </button>
@@ -375,8 +416,39 @@ export class DashboardComponent implements OnDestroy {
     return open.countdownAgainstSeconds - elapsedSeconds;
   });
 
+  /**
+   * What the child has ticked since the last start. Kept here only, and
+   * emptied after every start, so the list comes back unticked next time.
+   */
+  protected readonly ticked = signal<ReadonlySet<number>>(new Set());
+
+  /** Screen time with an item due today still unticked. Looking things up is never held back. */
+  protected readonly checklistOpen = computed(() => {
+    const items = this.account()?.checklist ?? [];
+    return this.type() === 'FUN' && items.some((item) => !this.ticked().has(item.id));
+  });
+
   constructor() {
     void this.reload();
+  }
+
+  protected isTicked(id: number): boolean {
+    return this.ticked().has(id);
+  }
+
+  protected tick(id: number, checked: boolean): void {
+    const next = new Set(this.ticked());
+    if (checked) {
+      next.add(id);
+    } else {
+      next.delete(id);
+    }
+    this.ticked.set(next);
+  }
+
+  /** The ticks for this start: only screen time carries them. */
+  private tickedIds(): number[] {
+    return this.type() === 'FUN' ? [...this.ticked()] : [];
   }
 
   protected reason(rules: EffectiveSettings): string {
@@ -408,7 +480,10 @@ export class DashboardComponent implements OnDestroy {
     if (device === null) {
       return;
     }
-    await this.run(() => this.api.start(device, this.type()));
+    await this.run(async () => {
+      await this.api.start(device, this.type(), this.tickedIds());
+      this.ticked.set(new Set());
+    });
   }
 
   protected async stop(): Promise<void> {
@@ -422,8 +497,14 @@ export class DashboardComponent implements OnDestroy {
       return;
     }
     await this.run(async () => {
-      await this.api.bookManually({ minutes, deviceId: device, type: this.type() });
+      await this.api.bookManually({
+        minutes,
+        deviceId: device,
+        type: this.type(),
+        checklistItemIds: this.tickedIds(),
+      });
       this.manualMinutes.set(null);
+      this.ticked.set(new Set());
     });
   }
 
@@ -439,8 +520,18 @@ export class DashboardComponent implements OnDestroy {
       await this.reload();
     } catch (error) {
       this.snackBar.open(errorMessage(error), undefined, { duration: 6000 });
+      // a parent may have added an item since the page loaded: show the list as it is now
+      if (pendingChecklist(error)) {
+        await this.reload();
+      }
     } finally {
       this.busy.set(false);
     }
   }
+}
+
+function pendingChecklist(error: unknown): boolean {
+  const details = (error as { error?: { details?: { pendingChecklist?: unknown } } })?.error
+    ?.details;
+  return Array.isArray(details?.pendingChecklist);
 }

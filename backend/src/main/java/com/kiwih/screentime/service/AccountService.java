@@ -38,12 +38,13 @@ public class AccountService {
     private final DeviceRepository devices;
     private final UserRepository users;
     private final SessionService sessions;
+    private final ChecklistService checklist;
     private final Clock clock;
 
     public AccountService(AccountResolver accounts, SettingsService settingsService,
                           BalanceService balances, WeekService weeks, WeeklyCheckRepository checks,
                           DeviceRepository devices, UserRepository users,
-                          SessionService sessions, Clock clock) {
+                          SessionService sessions, ChecklistService checklist, Clock clock) {
         this.accounts = accounts;
         this.settingsService = settingsService;
         this.balances = balances;
@@ -52,6 +53,7 @@ public class AccountService {
         this.devices = devices;
         this.users = users;
         this.sessions = sessions;
+        this.checklist = checklist;
         this.clock = clock;
     }
 
@@ -93,9 +95,10 @@ public class AccountService {
 
         List<DayView> strip = dayStrip(today, week, rules, bookings);
 
+        Map<Long, List<ChecklistTickView>> ticks = ticks(ofWeek);
         List<SessionView> todayEntries = ofWeek.stream()
                 .filter(s -> calendar.dayOf(s.getStartedAt()).equals(today))
-                .map(s -> toView(s, deviceNames, userNames, calendar, now))
+                .map(s -> toView(s, deviceNames, userNames, ticks, calendar, now))
                 .toList();
 
         return new AccountView(
@@ -104,7 +107,9 @@ public class AccountService {
                 rules.settings().cutoffHour(),
                 SettingsOverviewService.view(rules, week),
                 !rules.beforeCutoff(now),
-                openView, strip, todayEntries,
+                openView,
+                checklist.dueToday().stream().map(i -> new ChecklistDueView(i.id(), i.text())).toList(),
+                strip, todayEntries,
                 adjustmentViews(weekStart, userNames),
                 devices.findAllByActiveTrueOrderBySortOrderAscNameAsc().stream()
                         .map(d -> new DeviceView(d.getId(), d.getName(), d.isActive()))
@@ -134,11 +139,12 @@ public class AccountService {
         Map<Long, String> userNames = userNames();
 
         List<DayDetailView> days = new ArrayList<>();
+        Map<Long, List<ChecklistTickView>> ticks = ticks(ofWeek);
         for (LocalDate day : calendar.daysOfWeek(weekStart)) {
             Balance ofDay = rules.balance(day, week, bookings, adjustmentMinutes);
             List<SessionView> entries = ofWeek.stream()
                     .filter(s -> calendar.dayOf(s.getStartedAt()).equals(day))
-                    .map(s -> toView(s, deviceNames, userNames, calendar, now))
+                    .map(s -> toView(s, deviceNames, userNames, ticks, calendar, now))
                     .toList();
             days.add(new DayDetailView(day, day.getDayOfWeek(), ofDay.dailyCapSeconds(),
                     ofDay.dayUsedSeconds(), ofDay.remainingTodaySeconds(),
@@ -184,8 +190,10 @@ public class AccountService {
         Instant now = clock.instant();
         Map<Long, String> deviceNames = deviceNames();
         Map<Long, String> userNames = userNames();
-        return sessions.list(caller, from, to).stream()
-                .map(s -> toView(s, deviceNames, userNames, calendar, now))
+        List<Session> listed = sessions.list(caller, from, to);
+        Map<Long, List<ChecklistTickView>> ticks = ticks(listed);
+        return listed.stream()
+                .map(s -> toView(s, deviceNames, userNames, ticks, calendar, now))
                 .toList();
     }
 
@@ -214,14 +222,20 @@ public class AccountService {
                 .toList();
     }
 
+    /** The checklist ticks of these sessions, in one read. */
+    public Map<Long, List<ChecklistTickView>> ticks(List<Session> of) {
+        return checklist.ticksFor(of.stream().map(Session::getId).toList());
+    }
+
     public SessionView toView(Session s, Map<Long, String> deviceNames, Map<Long, String> userNames,
-                              WeekCalendar calendar, Instant now) {
+                              Map<Long, List<ChecklistTickView>> ticks, WeekCalendar calendar, Instant now) {
         return new SessionView(
                 s.getId(), calendar.dayOf(s.getStartedAt()), s.getType(), s.getSource(),
                 s.getDeviceId(), deviceNames.get(s.getDeviceId()),
                 s.getStartedAt(), s.getEndedAt(),
                 BalanceService.usedSeconds(s, calendar, now),
-                s.isOpen(), s.isAutoClosed(), s.getNote(), userNames.get(s.getCreatedBy()));
+                s.isOpen(), s.isAutoClosed(), s.getNote(), userNames.get(s.getCreatedBy()),
+                ticks.getOrDefault(s.getId(), List.of()));
     }
 
     public WeeklyCheckView toCheckView(WeeklyCheck c, Map<Long, String> deviceNames) {

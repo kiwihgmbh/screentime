@@ -28,6 +28,20 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("what a browser actually receives")
 class StatusCodeOverHttpTest extends PostgresTestBase {
 
+    /**
+     * A fixed Friday afternoon. On the system clock these tests failed every
+     * evening after the cut off, which in CI meant no deploy after 20:00.
+     */
+    @org.springframework.boot.test.context.TestConfiguration
+    static class FixedClock {
+        @org.springframework.context.annotation.Bean
+        @org.springframework.context.annotation.Primary
+        java.time.Clock testClock() {
+            return new MutableClock(java.time.LocalDate.of(2026, 10, 2).atTime(16, 0)
+                    .atZone(java.time.ZoneId.of("Europe/Zurich")).toInstant());
+        }
+    }
+
     @Autowired
     TestRestTemplate rest;
 

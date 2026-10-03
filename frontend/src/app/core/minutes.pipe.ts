@@ -36,15 +36,22 @@ export class MinutesPipe implements PipeTransform {
  * as a "0 min" that still made the balance move. Zero parts are left out,
  * except the minutes between hours and seconds, so "1 h 0 min 5 s" cannot be
  * read as an hour and five minutes.
+ *
+ * 'compact' is for the big numbers on the dashboard: from an hour up the
+ * seconds are left out, rounded down, because "7 h 59 min 57 s" wraps onto a
+ * second line and the seconds only matter once less than an hour is left.
  */
 @Pipe({ name: 'duration' })
 export class DurationPipe implements PipeTransform {
-  transform(value: number | null | undefined): string {
+  transform(value: number | null | undefined, mode: 'exact' | 'compact' = 'exact'): string {
     if (value === null || value === undefined || Number.isNaN(value)) {
       return '–';
     }
     const negative = value < 0;
-    const total = Math.abs(Math.trunc(value));
+    let total = Math.abs(Math.trunc(value));
+    if (mode === 'compact' && total >= 3600) {
+      total -= total % 60;
+    }
     const hours = Math.floor(total / 3600);
     const minutes = Math.floor((total % 3600) / 60);
     const seconds = total % 60;

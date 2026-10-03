@@ -67,6 +67,16 @@ describe('DurationPipe', () => {
     expect(pipe.transform(undefined)).toBe('–');
     expect(pipe.transform(Number.NaN)).toBe('–');
   });
+
+  it('in compact form drops the seconds once there is an hour or more', () => {
+    // "7 h 59 min 57 s" wraps the headline onto two lines and says nothing
+    // the child acts on; under an hour the seconds matter again
+    expect(pipe.transform(7 * 3600 + 59 * 60 + 57, 'compact')).toBe('7 h 59 min');
+    expect(pipe.transform(3600 + 5, 'compact')).toBe('1 h');
+    expect(pipe.transform(59 * 60 + 59, 'compact')).toBe('59 min 59 s');
+    expect(pipe.transform(40, 'compact')).toBe('40 s');
+    expect(pipe.transform(-(2 * 3600 + 30), 'compact')).toBe('− 2 h');
+  });
 });
 
 describe('CountdownPipe', () => {

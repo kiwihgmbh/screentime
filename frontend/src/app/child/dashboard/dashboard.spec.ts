@@ -145,6 +145,97 @@ describe('DashboardComponent', () => {
     expect(headline?.classList.contains('none')).toBe(true);
   });
 
+  describe('the checklist', () => {
+    const withChecklist = (): Account => ({
+      ...account(),
+      checklist: [
+        { id: 1, text: 'Homework' },
+        { id: 2, text: 'Laundry' },
+      ],
+    });
+    const root = () => fixture.nativeElement as HTMLElement;
+    const button = (label: string) =>
+      Array.from(root().querySelectorAll('button')).find((b) =>
+        b.textContent?.includes(label),
+      ) as HTMLButtonElement;
+
+    async function tick(index: number): Promise<void> {
+      (
+        root().querySelectorAll('[data-testid="checklist"] input')[index] as HTMLInputElement
+      ).click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+    }
+
+    it('is shown at the top whenever something is due', async () => {
+      await render(withChecklist());
+      const card = root().querySelector('[data-testid="checklist"]');
+      expect(card?.textContent).toContain('Homework');
+      expect(card?.textContent).toContain('Laundry');
+      expect(root().querySelector('.stack')?.firstElementChild).toBe(card);
+    });
+
+    it('is not shown when nothing is due', async () => {
+      await render(account());
+      expect(root().querySelector('[data-testid="checklist"]')).toBeNull();
+      expect(button('Start').disabled).toBe(false);
+    });
+
+    it('holds screen time back until every item is ticked', async () => {
+      await render(withChecklist());
+      expect(button('Tick the checklist first').disabled).toBe(true);
+      expect(button('Book').disabled).toBe(true);
+
+      await tick(0);
+      expect(button('Tick the checklist first').disabled).toBe(true);
+
+      await tick(1);
+      expect(button('Start').disabled).toBe(false);
+    });
+
+    it('sends the ticks with the start, and they are gone afterwards', async () => {
+      await render(withChecklist());
+      await tick(0);
+      await tick(1);
+      button('Start').click();
+
+      const request = http.expectOne('/api/sessions/start');
+      expect(request.request.body.checklistItemIds).toEqual([1, 2]);
+      request.flush({});
+      await fixture.whenStable();
+      http.expectOne('/api/account/current').flush(withChecklist());
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      // the list is there again, unticked, for the next start
+      expect(root().querySelector('[data-testid="checklist"]')).not.toBeNull();
+      expect(button('Tick the checklist first').disabled).toBe(true);
+    });
+
+    it('never holds back looking something up', async () => {
+      await render(withChecklist());
+      (fixture.componentInstance as unknown as { type: { set: (t: string) => void } }).type.set(
+        'QUICK',
+      );
+      fixture.detectChanges();
+      expect(button('Start').disabled).toBe(false);
+    });
+
+    it('shows on an entry what was ticked for it', async () => {
+      await render({
+        ...account(),
+        todayEntries: [
+          {
+            ...account().todayEntries[0],
+            checklist: [{ itemId: 1, text: 'Homework', tickedAt: '2026-10-02T14:00:00Z' }],
+          },
+        ],
+      });
+      expect(root().querySelector('.ticked')?.textContent).toContain('Homework');
+    });
+  });
+
   function account(): Account {
     return {
       displayName: 'A Child',
@@ -179,6 +270,7 @@ describe('DashboardComponent', () => {
         days: [],
       },
       screensOff: false,
+      checklist: [],
       week: [
         day('2026-09-28', 'MONDAY', 60, 50),
         day('2026-09-29', 'TUESDAY', 60, 0),
@@ -201,6 +293,7 @@ describe('DashboardComponent', () => {
           seconds: 20 * 60,
           running: false,
           autoClosed: false,
+          checklist: [],
         },
       ],
       weekAdjustments: [

@@ -40,17 +40,19 @@ public class SessionService {
     private final AccountResolver accounts;
     private final WeekService weeks;
     private final AuditService audit;
+    private final ChecklistService checklist;
     private final Clock clock;
 
     public SessionService(SessionRepository sessions, DeviceRepository devices,
                           SettingsService settingsService, AccountResolver accounts,
-                          WeekService weeks, AuditService audit, Clock clock) {
+                          WeekService weeks, AuditService audit, ChecklistService checklist, Clock clock) {
         this.sessions = sessions;
         this.devices = devices;
         this.settingsService = settingsService;
         this.accounts = accounts;
         this.weeks = weeks;
         this.audit = audit;
+        this.checklist = checklist;
         this.clock = clock;
     }
 
@@ -60,7 +62,7 @@ public class SessionService {
     }
 
     @Transactional
-    public Session start(AppPrincipal caller, Long deviceId, SessionType type) {
+    public Session start(AppPrincipal caller, Long deviceId, SessionType type, List<Long> checklistItemIds) {
         User account = accounts.resolve(caller);
         ScreentimeRules rules = settingsService.rules();
         Instant now = clock.instant();
@@ -68,10 +70,13 @@ public class SessionService {
         Long openId = openSession(account.getId()).map(Session::getId).orElse(null);
         rules.requireStartAllowed(caller.role(), type, now, openId);
         requireDevice(deviceId, caller);
+        // after the other rules, so after the cut off the reason is the cut off
+        List<ChecklistItem> ticked = checklist.requireTicked(caller, type, ticks(checklistItemIds));
 
         Session saved = sessions.save(
                 Session.startTimer(account.getId(), deviceId, type, caller.userId(), now));
         audit.created(AuditService.SESSION, saved.getId(), SessionSnapshot.of(saved), caller.userId());
+        checklist.record(saved, ticked, caller.userId());
         return saved;
     }
 
@@ -107,7 +112,8 @@ public class SessionService {
      */
     @Transactional
     public Session bookManually(AppPrincipal caller, Long deviceId, SessionType type,
-                                int minutes, LocalDate requestedDate, String note) {
+                                int minutes, LocalDate requestedDate, String note,
+                                List<Long> checklistItemIds) {
         User account = accounts.resolve(caller);
         ScreentimeRules rules = settingsService.rules();
         Instant now = clock.instant();
@@ -116,6 +122,7 @@ public class SessionService {
 
         rules.requireManualBookingAllowed(caller.role(), type, day, now, minutes);
         requireDevice(deviceId, caller);
+        List<ChecklistItem> ticked = checklist.requireTicked(caller, type, ticks(checklistItemIds));
 
         Instant startedAt = day.equals(today)
                 ? now
@@ -124,6 +131,7 @@ public class SessionService {
         Session saved = sessions.save(Session.manual(
                 account.getId(), deviceId, type, caller.userId(), startedAt, minutes, note));
         audit.created(AuditService.SESSION, saved.getId(), SessionSnapshot.of(saved), caller.userId());
+        checklist.record(saved, ticked, caller.userId());
         return saved;
     }
 
@@ -206,6 +214,10 @@ public class SessionService {
     @Transactional(readOnly = true)
     public List<Device> allDevices() {
         return devices.findAllByOrderBySortOrderAscNameAsc();
+    }
+
+    private static List<Long> ticks(List<Long> ids) {
+        return ids == null ? List.of() : ids;
     }
 
     private void requireDevice(Long deviceId, AppPrincipal caller) {

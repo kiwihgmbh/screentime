@@ -52,6 +52,41 @@ export interface Session {
   autoClosed: boolean;
   note?: string;
   createdBy?: string;
+  /** the checklist items ticked for it, as they read then; empty when none were due */
+  checklist: ChecklistTick[];
+}
+
+/** One item ticked for an entry. */
+export interface ChecklistTick {
+  itemId: number;
+  text: string;
+  tickedAt: string;
+}
+
+/** One item the child ticks today before screen time. */
+export interface ChecklistDue {
+  id: number;
+  text: string;
+}
+
+/** A reminder as the parents manage it. No weekdays means every day. */
+export interface ChecklistItem {
+  id: number;
+  text: string;
+  weekdays: DayOfWeek[];
+  validFrom?: string;
+  validUntil?: string;
+  sortOrder: number;
+  dueToday: boolean;
+  createdBy?: string;
+  createdAt: string;
+}
+
+export interface ChecklistItemInput {
+  text: string;
+  weekdays: DayOfWeek[];
+  validFrom?: string;
+  validUntil?: string;
 }
 
 export interface OpenSession {
@@ -126,6 +161,8 @@ export interface Account {
   /** the cut off has passed: screens are off for the evening */
   screensOff: boolean;
   openSession?: OpenSession;
+  /** what the child ticks before screen time today; empty when nothing is due */
+  checklist: ChecklistDue[];
   week: Day[];
   todayEntries: Session[];
   weekAdjustments: Adjustment[];

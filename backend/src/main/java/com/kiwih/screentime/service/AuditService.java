@@ -29,6 +29,7 @@ public class AuditService {
     public static final String WEEK_FLAG = "WEEK_FLAG";
     public static final String USER = "USER";
     public static final String HOLIDAY_PERIOD = "HOLIDAY_PERIOD";
+    public static final String CHECKLIST_ITEM = "CHECKLIST_ITEM";
 
     private final AuditLogRepository auditLog;
     private final ObjectMapper objectMapper;

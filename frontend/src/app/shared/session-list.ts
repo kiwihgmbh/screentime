@@ -65,6 +65,10 @@ import { DurationPipe } from '../core/minutes.pipe';
       color: var(--mat-sys-on-surface-variant);
       padding: 12px 0;
     }
+    .ticked {
+      font-size: 0.75rem;
+      color: var(--mat-sys-on-surface-variant);
+    }
     .flag {
       font-size: 0.75rem;
       color: var(--mat-sys-error);
@@ -92,6 +96,12 @@ import { DurationPipe } from '../core/minutes.pipe';
                   <span>· {{ session.note }}</span>
                 }
               </div>
+              @if (session.checklist.length > 0) {
+                <div class="ticked">
+                  <mat-icon inline>check_box</mat-icon>
+                  {{ ticked(session) }}
+                </div>
+              }
               @if (session.autoClosed) {
                 <div class="flag" i18n>
                   Stopped automatically at midnight, capped at what the day had left.
@@ -136,6 +146,11 @@ export class SessionListComponent {
 
   readonly edit = output<Session>();
   readonly remove = output<Session>();
+
+  /** The checklist items ticked for this entry, as they read then. */
+  protected ticked(session: Session): string {
+    return session.checklist.map((t) => t.text).join(', ');
+  }
 
   protected time(instant: string): string {
     return new Date(instant).toLocaleTimeString(undefined, {

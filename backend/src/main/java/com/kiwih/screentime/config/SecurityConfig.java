@@ -66,6 +66,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/adjustments/**").hasRole("PARENT")
                         .requestMatchers("/api/settings", "/api/settings/**").hasRole("PARENT")
                         .requestMatchers("/api/holidays", "/api/holidays/**").hasRole("PARENT")
+                        .requestMatchers("/api/checklist", "/api/checklist/**").hasRole("PARENT")
                         .requestMatchers("/api/users/**").hasRole("PARENT")
                         .requestMatchers("/api/weeks/**").hasRole("PARENT")
                         .requestMatchers(HttpMethod.PUT, "/api/sessions/**").hasRole("PARENT")

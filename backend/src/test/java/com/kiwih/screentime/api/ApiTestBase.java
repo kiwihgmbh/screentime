@@ -87,6 +87,8 @@ public abstract class ApiTestBase extends PostgresTestBase {
         jdbc.update("delete from weekly_check_devices");
         jdbc.update("delete from adjustments");
         jdbc.update("delete from weekly_checks");
+        jdbc.update("delete from checklist_ticks");
+        jdbc.update("delete from checklist_items");
         jdbc.update("delete from sessions");
         jdbc.update("delete from week_flags");
         jdbc.update("delete from audit_log");

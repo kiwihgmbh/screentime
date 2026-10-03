@@ -23,5 +23,7 @@ public record SessionView(
         boolean autoClosed,
         String note,
         /** who entered it, so a parent's correction is visible as one */
-        String createdBy) {
+        String createdBy,
+        /** the checklist items ticked for it, as they read then; empty when none were due */
+        java.util.List<ChecklistTickView> checklist) {
 }

@@ -18,5 +18,7 @@ public record ManualSessionRequest(
         @NotNull Long deviceId,
         @NotNull SessionType type,
         LocalDate date,
-        @Size(max = 512) String note) {
+        @Size(max = 512) String note,
+        /** the checklist items ticked for this entry, as for a start */
+        java.util.List<Long> checklistItemIds) {
 }

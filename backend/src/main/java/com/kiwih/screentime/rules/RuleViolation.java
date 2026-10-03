@@ -13,6 +13,8 @@ public class RuleViolation extends RuntimeException {
         SESSION_ALREADY_OPEN,
         /** The request clashes with something already stored, such as an overlapping holiday. Maps to 409. */
         CONFLICT,
+        /** Screen time asked for before the day's checklist was ticked. Maps to 409, with the items. */
+        CHECKLIST_PENDING,
         /** The request itself does not make sense. Maps to 400. */
         INVALID
     }

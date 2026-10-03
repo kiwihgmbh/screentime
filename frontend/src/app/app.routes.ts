@@ -45,6 +45,12 @@ export const routes: Routes = [
         title: 'Settings',
       },
       {
+        path: 'checklist',
+        loadComponent: () =>
+          import('./parent/checklist/checklist').then((m) => m.ChecklistComponent),
+        title: 'Checklist',
+      },
+      {
         path: 'users',
         loadComponent: () => import('./parent/users/users').then((m) => m.UsersComponent),
         title: 'Accounts',

@@ -80,7 +80,7 @@ import { DurationPipe } from '../core/minutes.pipe';
               [style.width.%]="usedShare(day)"
             ></div>
           </div>
-          <span class="left">{{ day.remainingSeconds | duration }}</span>
+          <span class="left">{{ day.remainingSeconds | duration: 'compact' }}</span>
         </div>
       }
     </div>

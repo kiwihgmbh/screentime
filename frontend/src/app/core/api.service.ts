@@ -9,6 +9,8 @@ import {
   Device,
   Session,
   SessionType,
+  ChecklistItem,
+  ChecklistItemInput,
   EffectiveSettings,
   HolidayPeriod,
   HolidayPeriodInput,
@@ -58,8 +60,11 @@ export class ApiService {
 
   // -------------------------------------------------------------- the timer
 
-  start(deviceId: number, type: SessionType): Promise<Session> {
-    return firstValueFrom(this.http.post<Session>('/api/sessions/start', { deviceId, type }));
+  /** The checklist items ticked for this start travel with it; the server checks them. */
+  start(deviceId: number, type: SessionType, checklistItemIds: number[] = []): Promise<Session> {
+    return firstValueFrom(
+      this.http.post<Session>('/api/sessions/start', { deviceId, type, checklistItemIds }),
+    );
   }
 
   stop(): Promise<Session> {
@@ -76,6 +81,7 @@ export class ApiService {
     type: SessionType;
     date?: string;
     note?: string;
+    checklistItemIds?: number[];
   }): Promise<Session> {
     return firstValueFrom(this.http.post<Session>('/api/sessions/manual', entry));
   }
@@ -132,6 +138,27 @@ export class ApiService {
   effectiveSettings(week?: string): Promise<EffectiveSettings> {
     const params: Record<string, string> = week ? { week } : {};
     return firstValueFrom(this.http.get<EffectiveSettings>('/api/settings/effective', { params }));
+  }
+
+  /** Every checklist item, in the order the child sees them. Parents only. */
+  checklist(): Promise<ChecklistItem[]> {
+    return firstValueFrom(this.http.get<ChecklistItem[]>('/api/checklist'));
+  }
+
+  createChecklistItem(input: ChecklistItemInput): Promise<ChecklistItem> {
+    return firstValueFrom(this.http.post<ChecklistItem>('/api/checklist', input));
+  }
+
+  updateChecklistItem(id: number, input: ChecklistItemInput): Promise<ChecklistItem> {
+    return firstValueFrom(this.http.put<ChecklistItem>(`/api/checklist/${id}`, input));
+  }
+
+  reorderChecklist(ids: number[]): Promise<ChecklistItem[]> {
+    return firstValueFrom(this.http.put<ChecklistItem[]>('/api/checklist/order', { ids }));
+  }
+
+  deleteChecklistItem(id: number): Promise<void> {
+    return firstValueFrom(this.http.delete<void>(`/api/checklist/${id}`));
   }
 
   holidays(from?: string, to?: string): Promise<HolidayPeriod[]> {

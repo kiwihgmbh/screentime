@@ -113,6 +113,25 @@ answer is there. FILM is the family film night on Friday, Saturday and Sunday.
    by `bonusMinutes` and the weekend ceiling rises to `bonusWeekendCapMinutes`.
    The bonus is not cumulative; it is set or not set, per week.
 
+## Checklist
+
+Parents set reminders the child ticks before screen time: "homework first",
+"laundry". An item is due always, or only on some weekdays, or only from one
+date to another (both ends inclusive, either end may be open), or both; a
+single day is a range of one day. Nothing is seeded.
+
+Every start of screen time by the child, by timer or by hand, needs every
+item due that day ticked, every time. The list does not disappear once
+ticked: the next start asks again, because a list that is clicked away once
+is forgotten. The ticks are sent with the start request and checked against
+the server's own day and list; a start with an item left unticked returns 409
+with the items still to tick. Each tick is stored with the session it unlocked
+and a copy of the item's text, at the server's time.
+
+Looking things up is not blocked, because it is often the homework itself. A
+parent is not blocked. Removing an item switches it off; it is never deleted,
+so past ticks stay readable.
+
 ## Time, dates and manipulation
 
 This is the part that decides whether the app is trustworthy. Get it right
@@ -169,6 +188,10 @@ out of sync is a bug that is very hard to find later.
   penalty_minutes, clean, deliberate, budget_minutes, tolerance_minutes,
   settings_scope, checked_by, checked_at
 - `week_flags`: week_start, bonus_active
+- `checklist_items`: id, text, weekdays (null for every day), valid_from,
+  valid_until, sort_order, active, created_by, created_at
+- `checklist_ticks`: id, session_id, item_id, item_text, user_id, ticked_at;
+  one row per item ticked for one start
 - `audit_log`: id, entity, entity_id, action, old_value, new_value, user_id, at
 
 Seed `devices` with iPad, iMac, Phone, PlayStation, TV. Seed `settings` with the
@@ -185,9 +208,9 @@ REST under `/api`, documented with springdoc OpenAPI.
 | GET | /api/account/current | all | the dashboard payload, see below |
 | GET | /api/account/week | all | `?start=YYYY-MM-DD`, all seven days |
 | GET | /api/account/history | all | `?weeks=12`, one row per week |
-| POST | /api/sessions/start | all | `{ deviceId, type }` |
+| POST | /api/sessions/start | all | `{ deviceId, type, checklistItemIds? }` |
 | POST | /api/sessions/stop | all | closes the caller's open session |
-| POST | /api/sessions/manual | all | `{ minutes, deviceId, type, date? }` |
+| POST | /api/sessions/manual | all | `{ minutes, deviceId, type, date?, checklistItemIds? }` |
 | GET | /api/sessions | all | `?from=&to=`, a child sees only their own |
 | PUT | /api/sessions/{id} | PARENT | |
 | DELETE | /api/sessions/{id} | PARENT | |
@@ -196,6 +219,11 @@ REST under `/api`, documented with springdoc OpenAPI.
 | GET | /api/settings | PARENT | both value sets and the threshold: in force this week and next, every row, and the change log |
 | PUT | /api/settings | PARENT | `{ scope, values, validFrom? }`, see below |
 | GET | /api/settings/effective | all | `?week=YYYY-MM-DD`, the values in force for that week and why |
+| GET | /api/checklist | PARENT | every item in order, with whether it is due today |
+| POST | /api/checklist | PARENT | `{ text, weekdays[], validFrom?, validUntil? }`, added at the end |
+| PUT | /api/checklist/{id} | PARENT | the same body; past ticks keep the old text |
+| PUT | /api/checklist/order | PARENT | `{ ids }`, every item exactly once |
+| DELETE | /api/checklist/{id} | PARENT | switches the item off |
 | GET | /api/holidays | PARENT | `?from=&to=`, the periods sharing a day with the range, or all |
 | POST | /api/holidays | PARENT | `{ name, startDate, endDate }`; 409 naming the period it overlaps |
 | PUT | /api/holidays/{id} | PARENT | the same body; a period never conflicts with itself |
@@ -237,7 +265,9 @@ daily ceiling in force, bonus active, cut off hour, whether screens are off
 right now, the open session if there is one, and the seven day strip. Every
 duration in it is in seconds. The open session carries what was available
 before it started, so the countdown is that minus the time since its start,
-however often the page is reloaded.
+however often the page is reloaded. It also carries `checklist`, the items
+the child ticks before screen time today. Every entry carries the checklist
+items ticked for it, as they read then.
 
 ### The weekly check
 
@@ -263,7 +293,12 @@ first; this is used on an iPad and a phone, rarely on a desktop. Interface
 language English, prepared for i18n.
 
 Child view:
-- Remaining week as the largest element on the screen
+- The checklist due today at the top, every time the page opens, one tick box
+  per item; screen time cannot start until every box is ticked, and the boxes
+  are empty again after each start
+- Remaining week as the largest element on the screen. The big numbers show
+  seconds only once less than an hour is left; entries and the running
+  countdown are always exact to the second
 - Remaining today and remaining quick budget below it
 - A seven day strip, today marked
 - Start and stop, with device and type
@@ -277,6 +312,10 @@ Child view:
 Parent view adds:
 - The weekly check: reported minutes per device, difference computed live, save
 - Adjustments with a reason, settings, holiday periods, user management
+- The checklist page: the items in the child's order with when each is due,
+  add, edit, move up and down, remove; weekday toggles and optional first and
+  last day
+- On every entry, the checklist items ticked for it
 - The settings page: one sentence on what the current week runs on and why;
   the term values and the holiday values, each field with its value in force,
   its rule in one line and an inline error when the rule breaks, Save disabled

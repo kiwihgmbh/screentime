@@ -25,6 +25,8 @@ public record AccountView(
         /** the cut off has passed: screens are off for the evening */
         boolean screensOff,
         OpenSessionView openSession,
+        /** what the child ticks before screen time today; empty when nothing is due */
+        List<ChecklistDueView> checklist,
         List<DayView> week,
         List<SessionView> todayEntries,
         List<AdjustmentView> weekAdjustments,

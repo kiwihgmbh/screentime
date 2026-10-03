@@ -40,7 +40,7 @@ class MigrationTest extends PostgresTestBase {
         // the migrated schema during context startup
         Integer applied = jdbc.queryForObject(
                 "select count(*) from flyway_schema_history where success = true", Integer.class);
-        assertThat(applied).isEqualTo(5);
+        assertThat(applied).isEqualTo(6);
     }
 
     @Test
@@ -114,6 +114,47 @@ class MigrationTest extends PostgresTestBase {
     }
 
     @Test
+    void noChecklistItemsAreSeeded() {
+        assertThat(jdbc.queryForObject("select count(*) from checklist_items", Integer.class)).isZero();
+    }
+
+    @Test
+    void aChecklistItemOnlyNamesRealWeekdays() {
+        long parent = insertUser("parent", "PARENT");
+        insertChecklistItem(parent, "MONDAY,SATURDAY");
+        assertThatThrownBy(() -> insertChecklistItem(parent, "MONDAY,FUNDAY"))
+                .hasMessageContaining("ck_checklist_items_weekdays");
+    }
+
+    @Test
+    void aChecklistItemCannotEndBeforeItStarts() {
+        long parent = insertUser("parent", "PARENT");
+        assertThatThrownBy(() -> jdbc.update("""
+                insert into checklist_items (text, valid_from, valid_until, created_by)
+                values ('Backwards', date '2026-10-09', date '2026-10-05', ?)
+                """, parent))
+                .hasMessageContaining("ck_checklist_items_range");
+    }
+
+    @Test
+    void anItemIsTickedAtMostOncePerStart() {
+        long parent = insertUser("parent", "PARENT");
+        long child = insertUser("child", "CHILD");
+        long item = insertChecklistItem(parent, null);
+        long deviceId = jdbc.queryForObject("select id from devices where name = 'iPad'", Long.class);
+        insertOpenSession(child, deviceId);
+        long session = jdbc.queryForObject("select id from sessions where user_id = ?", Long.class, child);
+
+        String tick = """
+                insert into checklist_ticks (session_id, item_id, item_text, user_id, ticked_at)
+                values (?, ?, 'Homework', ?, now())
+                """;
+        jdbc.update(tick, session, item, child);
+        assertThatThrownBy(() -> jdbc.update(tick, session, item, child))
+                .hasMessageContaining("uq_checklist_ticks_session_item");
+    }
+
+    @Test
     void noHolidayPeriodsAreSeeded() {
         assertThat(jdbc.queryForObject("select count(*) from holiday_periods", Integer.class)).isZero();
     }
@@ -149,6 +190,8 @@ class MigrationTest extends PostgresTestBase {
                 """, String.class);
         assertThat(dates).containsExactly(
                 "adjustments.week_start",
+                "checklist_items.valid_from",
+                "checklist_items.valid_until",
                 "holiday_periods.end_date",
                 "holiday_periods.start_date",
                 "settings.valid_from",
@@ -205,6 +248,12 @@ class MigrationTest extends PostgresTestBase {
         jdbc.query("select key, value from settings where scope = ?",
                 rs -> { values.put(rs.getString(1), rs.getString(2)); }, scope);
         return values;
+    }
+
+    private long insertChecklistItem(long createdBy, String weekdays) {
+        return jdbc.queryForObject("""
+                insert into checklist_items (text, weekdays, created_by) values ('Homework', ?, ?) returning id
+                """, Long.class, weekdays, createdBy);
     }
 
     private void insertHoliday(String name, String from, String to) {

@@ -83,6 +83,9 @@ import { AuthService } from './core/auth.service';
             <a mat-menu-item routerLink="/parent/check">
               <mat-icon>fact_check</mat-icon><span i18n>The weekly check</span>
             </a>
+            <a mat-menu-item routerLink="/parent/checklist">
+              <mat-icon>checklist</mat-icon><span i18n>Checklist</span>
+            </a>
             <a mat-menu-item routerLink="/parent/settings">
               <mat-icon>tune</mat-icon><span i18n>Settings</span>
             </a>

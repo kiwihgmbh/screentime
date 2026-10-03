@@ -39,7 +39,8 @@ public class SessionController {
     @PostMapping("/start")
     @ResponseStatus(HttpStatus.CREATED)
     public SessionView start(@Valid @RequestBody StartSessionRequest request) {
-        return view(sessions.start(currentUser.require(), request.deviceId(), request.type()));
+        return view(sessions.start(currentUser.require(), request.deviceId(), request.type(),
+                request.checklistItemIds()));
     }
 
     @Operation(summary = "Stop the session that is running")
@@ -53,7 +54,7 @@ public class SessionController {
     @ResponseStatus(HttpStatus.CREATED)
     public SessionView manual(@Valid @RequestBody ManualSessionRequest request) {
         return view(sessions.bookManually(currentUser.require(), request.deviceId(), request.type(),
-                request.minutes(), request.date(), request.note()));
+                request.minutes(), request.date(), request.note(), request.checklistItemIds()));
     }
 
     @Operation(summary = "Entries in a date range. A child sees only their own.")
@@ -88,6 +89,6 @@ public class SessionController {
 
     private SessionView view(Session session) {
         return accounts.toView(session, accounts.deviceNames(), accounts.userNames(),
-                calendar, clock.instant());
+                accounts.ticks(List.of(session)), calendar, clock.instant());
     }
 }

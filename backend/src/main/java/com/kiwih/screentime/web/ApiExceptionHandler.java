@@ -1,5 +1,6 @@
 package com.kiwih.screentime.web;
 
+import com.kiwih.screentime.rules.ChecklistPendingException;
 import com.kiwih.screentime.rules.Holiday;
 import com.kiwih.screentime.rules.HolidayOverlapException;
 import com.kiwih.screentime.rules.InvalidSettingsException;
@@ -11,6 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -43,7 +45,7 @@ public class ApiExceptionHandler {
     public ResponseEntity<ApiError> onRuleViolation(RuleViolation e) {
         HttpStatus status = switch (e.kind()) {
             case NOT_ALLOWED -> HttpStatus.FORBIDDEN;
-            case SESSION_ALREADY_OPEN, CONFLICT -> HttpStatus.CONFLICT;
+            case SESSION_ALREADY_OPEN, CONFLICT, CHECKLIST_PENDING -> HttpStatus.CONFLICT;
             case INVALID -> HttpStatus.BAD_REQUEST;
         };
         Map<String, Object> details = new LinkedHashMap<>();
@@ -55,6 +57,12 @@ public class ApiExceptionHandler {
             details.put("conflictingPeriod", Map.of(
                     "id", other.id(), "name", other.name(),
                     "startDate", other.start().toString(), "endDate", other.end().toString()));
+        }
+        if (e instanceof ChecklistPendingException checklist) {
+            // the items still to tick, so the screen can show them again
+            details.put("pendingChecklist", checklist.pending().stream()
+                    .map(i -> Map.of("id", i.id(), "text", i.text()))
+                    .toList());
         }
         if (e instanceof InvalidSettingsException invalid) {
             // one entry per broken rule, with the fields it concerns, so the
@@ -97,6 +105,16 @@ public class ApiExceptionHandler {
                 .collect(Collectors.joining(", "));
         return body(HttpStatus.BAD_REQUEST,
                 message.isBlank() ? "The request is not valid." : message, Map.of());
+    }
+
+    /**
+     * A body that cannot be read at all: broken JSON, or a value that is not
+     * one of the allowed ones, such as a weekday that does not exist. That is
+     * the caller's mistake, not the server's, so 400 and not the 500 below.
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiError> onUnreadableBody(HttpMessageNotReadableException e) {
+        return body(HttpStatus.BAD_REQUEST, "The request could not be read. Check the values sent.", Map.of());
     }
 
     @ExceptionHandler(Exception.class)
