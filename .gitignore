@@ -1,0 +1,56 @@
+# secrets and local configuration
+.env
+.env.*
+!.env.example
+*.local
+*.local.*
+application-local.yml
+application-local.yaml
+application-local.properties
+application-prod.yml
+application-prod.yaml
+application-prod.properties
+docker-compose.override.yml
+docker-compose.prod.yml
+/deploy/secrets/
+*.pem
+*.key
+*.p12
+*.jks
+*.keystore
+
+# java and maven
+target/
+*.class
+*.jar
+*.war
+!.mvn/wrapper/maven-wrapper.jar
+.mvn/timing.properties
+hs_err_pid*
+
+# node and angular
+node_modules/
+dist/
+.angular/
+npm-debug.log*
+yarn-error.log*
+*.tsbuildinfo
+coverage/
+
+# intellij
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# editors and os
+.vscode/
+.DS_Store
+Thumbs.db
+
+# database dumps and local data
+*.sql.gz
+*.dump
+/data/
+postgres-data/
