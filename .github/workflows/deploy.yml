@@ -1,0 +1,169 @@
+# Test, build the images, push them to ghcr.io, and deploy over SSH.
+#
+# `test` runs on every push and pull request. `build` and `deploy` only run
+# for main, and only once the tests are green.
+#
+# This repository is public, so nothing below names a host. Everything about
+# the server comes from repository settings (Settings -> Secrets and
+# variables -> Actions):
+#
+#   secrets   VPS_HOST         the server's address
+#             VPS_USER         the user the workflow logs in as
+#             VPS_SSH_KEY      that user's private key
+#             GHCR_PULL_TOKEN  optional: a read:packages token, only needed
+#                              if the images on ghcr.io are private
+#   variables DEPLOY_REPO_DIR  the checkout on the server (default /opt/screentime)
+#
+# Without VPS_HOST the deploy job is skipped, so a fork that only wants the
+# tests and the images does not end up with a red run.
+#
+# docs/DEPLOY.md, "Automatic deploys", has the one time setup.
+
+name: Build & Deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request: {}
+  workflow_dispatch: {}
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      # Testcontainers uses the runner's own Docker daemon
+      - name: Backend tests
+        working-directory: backend
+        run: ./mvnw -B verify
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Frontend tests
+        working-directory: frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
+
+  build:
+    name: Build & push images
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # ghcr.io wants the owner in lower case
+      - name: Image prefix
+        id: prefix
+        run: echo "value=${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & push backend
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          push: true
+          labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          tags: |
+            ${{ steps.prefix.outputs.value }}/screentime-backend:latest
+            ${{ steps.prefix.outputs.value }}/screentime-backend:${{ github.sha }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,scope=backend,mode=max
+
+      - name: Build & push frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          push: true
+          labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          tags: |
+            ${{ steps.prefix.outputs.value }}/screentime-frontend:latest
+            ${{ steps.prefix.outputs.value }}/screentime-frontend:${{ github.sha }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,scope=frontend,mode=max
+
+    outputs:
+      prefix: ${{ steps.prefix.outputs.value }}
+
+  deploy:
+    name: Deploy to server
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check configuration
+        id: configured
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          if [ -n "$VPS_HOST" ]; then
+            echo "yes=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::VPS_HOST is not set, skipping the deploy. See docs/DEPLOY.md."
+          fi
+
+      - name: Deploy over SSH
+        if: steps.configured.outputs.yes == 'true'
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          envs: IMAGE_REGISTRY,IMAGE_TAG,GHCR_USER,GHCR_TOKEN,DEPLOY_REPO_DIR
+          script_stop: true
+          script: |
+            set -euo pipefail
+            cd "${DEPLOY_REPO_DIR:-/opt/screentime}"
+
+            # the compose files for this build; .env is ignored and stays put
+            git fetch --prune origin
+            git checkout main
+            git reset --hard origin/main
+
+            if [ -n "$GHCR_TOKEN" ]; then
+              echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+            fi
+
+            export IMAGE_REGISTRY IMAGE_TAG
+            COMPOSE="docker compose -f docker-compose.yml -f deploy/compose.registry.yml"
+            $COMPOSE pull screentime-backend screentime-frontend
+            $COMPOSE up -d --no-build --wait
+
+            docker image prune -f
+            docker logout ghcr.io || true
+        env:
+          IMAGE_REGISTRY: ${{ needs.build.outputs.prefix }}
+          IMAGE_TAG: ${{ github.sha }}
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
+          DEPLOY_REPO_DIR: ${{ vars.DEPLOY_REPO_DIR }}

@@ -1,0 +1,16 @@
+# Run the images built by the workflow instead of building on the server.
+#
+#   export IMAGE_REGISTRY=ghcr.io/<owner> IMAGE_TAG=latest
+#   docker compose -f docker-compose.yml -f deploy/compose.registry.yml pull
+#   docker compose -f docker-compose.yml -f deploy/compose.registry.yml up -d --no-build
+#
+# Everything else, the database, the ports and every variable, comes from
+# docker-compose.yml and the .env next to it. IMAGE_TAG is a commit SHA when
+# the workflow deploys, which is also how to roll back to an earlier build.
+
+services:
+  screentime-backend:
+    image: ${IMAGE_REGISTRY:?set IMAGE_REGISTRY, for example ghcr.io/<owner>}/screentime-backend:${IMAGE_TAG:-latest}
+
+  screentime-frontend:
+    image: ${IMAGE_REGISTRY:?set IMAGE_REGISTRY, for example ghcr.io/<owner>}/screentime-frontend:${IMAGE_TAG:-latest}
