@@ -7,9 +7,10 @@ import java.time.Instant;
  * One stretch of screen time. A session belongs to the local day on which it
  * started, even if it ends after midnight or after the cut off hour.
  *
- * {@code startedAt} and {@code endedAt} are always set by the server. Minutes
- * are stored because a manual entry has no real clock behind it, and because a
- * parent may correct the duration of a session that was left running.
+ * {@code startedAt} and {@code endedAt} are always set by the server. The
+ * duration is stored, in seconds, because a manual entry has no real clock
+ * behind it, because an automatically closed session is capped below its real
+ * length, and because a parent may correct the duration afterwards.
  */
 @Entity
 @Table(name = "sessions")
@@ -28,7 +29,8 @@ public class Session {
     @Column(name = "ended_at")
     private Instant endedAt;
 
-    private Integer minutes;
+    @Column(name = "duration_seconds")
+    private Integer durationSeconds;
 
     @Column(name = "device_id", nullable = false)
     private Long deviceId;
@@ -75,15 +77,15 @@ public class Session {
         s.source = SessionSource.MANUAL;
         s.createdBy = createdBy;
         s.startedAt = startedAt;
-        s.endedAt = startedAt.plusSeconds(60L * minutes);
-        s.minutes = minutes;
+        s.durationSeconds = Math.multiplyExact(minutes, 60);
+        s.endedAt = startedAt.plusSeconds(s.durationSeconds);
         s.note = note;
         return s;
     }
 
-    public void close(Instant endedAt, int minutes, boolean autoClosed) {
+    public void close(Instant endedAt, int seconds, boolean autoClosed) {
         this.endedAt = endedAt;
-        this.minutes = minutes;
+        this.durationSeconds = seconds;
         this.autoClosed = autoClosed;
     }
 
@@ -115,17 +117,17 @@ public class Session {
         this.endedAt = endedAt;
     }
 
-    public Integer getMinutes() {
-        return minutes;
+    public Integer getDurationSeconds() {
+        return durationSeconds;
     }
 
-    public void setMinutes(Integer minutes) {
-        this.minutes = minutes;
+    public void setDurationSeconds(Integer durationSeconds) {
+        this.durationSeconds = durationSeconds;
     }
 
-    /** Minutes already counted. An open session counts nothing until it is closed. */
-    public int countedMinutes() {
-        return minutes == null ? 0 : minutes;
+    /** Seconds already counted. An open session counts nothing until it is closed. */
+    public int countedSeconds() {
+        return durationSeconds == null ? 0 : durationSeconds;
     }
 
     public Long getDeviceId() {

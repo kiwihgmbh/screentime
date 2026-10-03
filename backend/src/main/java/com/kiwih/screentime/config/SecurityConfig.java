@@ -57,12 +57,15 @@ public class SecurityConfig {
                         .requestMatchers("/actuator/health").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                         // the child has to be able to read the rules the account
-                        // runs on, or the rules page drifts away from the balance
-                        .requestMatchers(HttpMethod.GET, "/api/settings").authenticated()
+                        // runs on, or the rules page drifts away from the balance.
+                        // The values in force, that is; the history and the
+                        // change log below are the parents'.
+                        .requestMatchers(HttpMethod.GET, "/api/settings/effective").authenticated()
                         // everything a parent alone may do
                         .requestMatchers("/api/checks/**").hasRole("PARENT")
                         .requestMatchers("/api/adjustments/**").hasRole("PARENT")
-                        .requestMatchers("/api/settings/**").hasRole("PARENT")
+                        .requestMatchers("/api/settings", "/api/settings/**").hasRole("PARENT")
+                        .requestMatchers("/api/holidays", "/api/holidays/**").hasRole("PARENT")
                         .requestMatchers("/api/users/**").hasRole("PARENT")
                         .requestMatchers("/api/weeks/**").hasRole("PARENT")
                         .requestMatchers(HttpMethod.PUT, "/api/sessions/**").hasRole("PARENT")

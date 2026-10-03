@@ -1,16 +1,19 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { MatCardModule } from '@angular/material/card';
 import { MatIconModule } from '@angular/material/icon';
 import { ApiService } from '../../core/api.service';
-import { Settings } from '../../core/models';
+import { EffectiveSettings } from '../../core/models';
 import { MinutesPipe } from '../../core/minutes.pipe';
+import { weekReason } from '../../core/week-summary';
 
 /**
  * The rules in plain language, on their own page.
  *
- * The numbers are read from the settings the account actually runs on, not
- * written into the text, so this page cannot drift away from what the app
- * does. A rules page that disagrees with the balance is worse than none.
+ * The numbers are read from the values in force this week, not written into
+ * the text, so this page cannot drift away from what the app does. A rules
+ * page that disagrees with the balance is worse than none. The first card
+ * says why the numbers are what they are: term rules or holiday rules, and
+ * which days are holidays.
  */
 @Component({
   selector: 'app-rules',
@@ -27,6 +30,9 @@ import { MinutesPipe } from '../../core/minutes.pipe';
       gap: 8px;
       margin: 0 0 6px;
     }
+    h3 mat-icon {
+      flex: 0 0 auto;
+    }
     p {
       margin: 0 0 8px;
       line-height: 1.5;
@@ -42,6 +48,25 @@ import { MinutesPipe } from '../../core/minutes.pipe';
   template: `
     <h2 i18n>The rules</h2>
     <div class="stack">
+      @if (settings(); as week) {
+        <mat-card class="why"
+          ><mat-card-content>
+            <h3>
+              <mat-icon>{{ week.scope === 'HOLIDAY' ? 'beach_access' : 'school' }}</mat-icon>
+              @if (week.scope === 'HOLIDAY') {
+                <span i18n>Holiday rules this week</span>
+              } @else {
+                <span i18n>Term rules this week</span>
+              }
+            </h3>
+            <p data-testid="reason">{{ reason() }}</p>
+            <p class="aside" i18n>
+              The numbers below are the ones in force this week. A week with
+              {{ week.holidayWeekThresholdDays }} or more holiday days runs on the holiday rules.
+            </p>
+          </mat-card-content></mat-card
+        >
+      }
       <mat-card
         ><mat-card-content>
           <h3><mat-icon>schedule</mat-icon><span i18n>The budget</span></h3>
@@ -50,6 +75,9 @@ import { MinutesPipe } from '../../core/minutes.pipe';
             {{ number('weekdayCapMinutes') | minutes }} on a school day and
             {{ number('weekendCapMinutes') | minutes }} on Saturday and Sunday.
           </p>
+          @if (holidayDaysInTermWeek()) {
+            <p i18n>On a holiday day the holiday ceiling applies instead, as it says above.</p>
+          }
           <p i18n>
             The daily ceilings add up to more than the week on purpose: you have to choose how to
             spend it.
@@ -173,7 +201,21 @@ import { MinutesPipe } from '../../core/minutes.pipe';
 })
 export class RulesComponent {
   private readonly api = inject(ApiService);
-  private readonly settings = signal<Settings>({});
+  /**
+   * The values in force this week and why. The child sees them and cannot
+   * change them: there is not a single form control on this page.
+   */
+  protected readonly settings = signal<EffectiveSettings | null>(null);
+
+  protected readonly reason = computed(() => {
+    const week = this.settings();
+    return week ? weekReason(week) : '';
+  });
+
+  protected readonly holidayDaysInTermWeek = computed(() => {
+    const week = this.settings();
+    return week !== null && week.scope === 'TERM' && week.holidayDayCount > 0;
+  });
 
   constructor() {
     void this.load();
@@ -181,17 +223,16 @@ export class RulesComponent {
 
   private async load(): Promise<void> {
     try {
-      this.settings.set(await this.api.settings());
+      this.settings.set(await this.api.effectiveSettings());
     } catch {
-      // a child cannot read the settings endpoint, so the page falls back to
-      // the numbers the dashboard already knows
-      this.settings.set({});
+      // the page still reads sensibly with the documented defaults
+      this.settings.set(null);
     }
   }
 
   protected number(key: string): number {
-    const raw = this.settings()[key];
-    return raw === undefined ? (FALLBACKS[key] ?? 0) : Number(raw);
+    const raw = this.settings()?.values[key];
+    return raw === undefined ? (FALLBACKS[key] ?? 0) : raw;
   }
 }
 

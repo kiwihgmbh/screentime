@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CountdownPipe, MinutesPipe } from './minutes.pipe';
+import { CountdownPipe, DurationPipe, MinutesPipe } from './minutes.pipe';
 
 describe('MinutesPipe', () => {
   const pipe = new MinutesPipe();
@@ -24,6 +24,42 @@ describe('MinutesPipe', () => {
   it('marks a deduction as negative rather than dropping the sign', () => {
     expect(pipe.transform(-60)).toBe('− 1 h');
     expect(pipe.transform(-30)).toBe('− 30 min');
+  });
+
+  it('shows a dash rather than NaN when there is no number', () => {
+    expect(pipe.transform(null)).toBe('–');
+    expect(pipe.transform(undefined)).toBe('–');
+    expect(pipe.transform(Number.NaN)).toBe('–');
+  });
+});
+
+describe('DurationPipe', () => {
+  const pipe = new DurationPipe();
+
+  it('shows seconds, because a session is counted to the second', () => {
+    expect(pipe.transform(40)).toBe('40 s');
+    expect(pipe.transform(90)).toBe('1 min 30 s');
+    expect(pipe.transform(4530)).toBe('1 h 15 min 30 s');
+  });
+
+  it('leaves the seconds out when there are none', () => {
+    expect(pipe.transform(0)).toBe('0 min');
+    expect(pipe.transform(45 * 60)).toBe('45 min');
+    expect(pipe.transform(8 * 3600)).toBe('8 h');
+    expect(pipe.transform(95 * 60)).toBe('1 h 35 min');
+  });
+
+  it('keeps the minutes between hours and seconds so 5 s is not read as 5 min', () => {
+    expect(pipe.transform(3605)).toBe('1 h 0 min 5 s');
+  });
+
+  it('drops a part second rather than rounding it up', () => {
+    expect(pipe.transform(59.9)).toBe('59 s');
+  });
+
+  it('marks a deduction as negative rather than dropping the sign', () => {
+    expect(pipe.transform(-30 * 60)).toBe('− 30 min');
+    expect(pipe.transform(-45)).toBe('− 45 s');
   });
 
   it('shows a dash rather than NaN when there is no number', () => {

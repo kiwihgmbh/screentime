@@ -8,17 +8,21 @@ package com.kiwih.screentime.rules;
  *
  * The budget and the adjustment are reported separately from what is left, so
  * the child can always see why a number is what it is.
+ *
+ * Every field is in seconds. The budgets are set in whole minutes, but time of
+ * use is counted to the second, and mixing the two units in one record is how
+ * a factor of sixty goes missing.
  */
 public record Balance(
-        int weeklyBudgetMinutes,
-        int adjustmentMinutes,
-        int weekUsedMinutes,
-        int remainingWeekMinutes,
-        int dailyCapMinutes,
-        int dayUsedMinutes,
-        int remainingTodayMinutes,
-        int quickBudgetMinutes,
-        int quickUsedMinutes,
-        int remainingQuickMinutes,
-        int availableNowMinutes) {
+        int weeklyBudgetSeconds,
+        int adjustmentSeconds,
+        int weekUsedSeconds,
+        int remainingWeekSeconds,
+        int dailyCapSeconds,
+        int dayUsedSeconds,
+        int remainingTodaySeconds,
+        int quickBudgetSeconds,
+        int quickUsedSeconds,
+        int remainingQuickSeconds,
+        int availableNowSeconds) {
 }

@@ -88,8 +88,8 @@ public class SessionService {
 
         SessionSnapshot before = SessionSnapshot.of(open);
         Instant now = clock.instant();
-        WeekCalendar calendar = settingsService.rules().calendar();
-        open.close(now, calendar.minutesBetween(open.getStartedAt(), now), false);
+        WeekCalendar calendar = settingsService.calendar();
+        open.close(now, calendar.secondsBetween(open.getStartedAt(), now), false);
 
         audit.updated(AuditService.SESSION, open.getId(), before,
                 SessionSnapshot.of(open), caller.userId());
@@ -142,7 +142,7 @@ public class SessionService {
                     "This session is still running. Stop it before correcting it.");
         }
         SessionSnapshot before = SessionSnapshot.of(session);
-        WeekCalendar calendar = settingsService.rules().calendar();
+        WeekCalendar calendar = settingsService.calendar();
 
         if (deviceId != null) {
             requireDevice(deviceId, caller);
@@ -164,10 +164,11 @@ public class SessionService {
                 throw new RuleViolation(RuleViolation.Kind.INVALID,
                         "A session cannot have negative minutes.");
             }
-            session.setMinutes(minutes);
+            // a correction is entered in whole minutes, like a manual entry
+            session.setDurationSeconds(Durations.seconds(minutes));
         }
         // keep the end consistent with the start and the duration
-        session.setEndedAt(session.getStartedAt().plusSeconds(60L * session.countedMinutes()));
+        session.setEndedAt(session.getStartedAt().plusSeconds(session.countedSeconds()));
 
         audit.updated(AuditService.SESSION, session.getId(), before,
                 SessionSnapshot.of(session), caller.userId());
@@ -187,7 +188,7 @@ public class SessionService {
     @Transactional(readOnly = true)
     public List<Session> list(AppPrincipal caller, LocalDate from, LocalDate to) {
         User account = accounts.resolve(caller);
-        WeekCalendar calendar = settingsService.rules().calendar();
+        WeekCalendar calendar = settingsService.calendar();
         LocalDate start = from != null ? from : calendar.weekStartOf(calendar.dayOf(clock.instant()));
         LocalDate end = to != null ? to : start.plusDays(6);
         if (end.isBefore(start)) {
@@ -220,9 +221,9 @@ public class SessionService {
 
     /** Called by the scheduler. Package visible so only the scheduler reaches it. */
     @Transactional
-    Session closeAutomatically(Session open, Instant closeAt, int minutes, Long byUserId) {
+    Session closeAutomatically(Session open, Instant closeAt, int seconds, Long byUserId) {
         SessionSnapshot before = SessionSnapshot.of(open);
-        open.close(closeAt, minutes, true);
+        open.close(closeAt, seconds, true);
         Session saved = sessions.save(open);
         audit.updated(AuditService.SESSION, saved.getId(), before,
                 SessionSnapshot.of(saved), byUserId);

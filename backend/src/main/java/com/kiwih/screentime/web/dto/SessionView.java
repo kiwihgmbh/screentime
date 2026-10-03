@@ -17,7 +17,8 @@ public record SessionView(
         String deviceName,
         Instant startedAt,
         Instant endedAt,
-        int minutes,
+        /** to the second; a running session reports what it has used so far */
+        int seconds,
         boolean running,
         boolean autoClosed,
         String note,

@@ -8,10 +8,10 @@ import java.util.List;
 public record DayDetailView(
         LocalDate date,
         DayOfWeek dayOfWeek,
-        int capMinutes,
-        int usedMinutes,
-        int remainingMinutes,
-        int quickUsedMinutes,
+        int capSeconds,
+        int usedSeconds,
+        int remainingSeconds,
+        int quickUsedSeconds,
         boolean today,
         boolean future,
         List<SessionView> entries) {

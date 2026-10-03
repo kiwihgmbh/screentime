@@ -2,7 +2,7 @@ import { Component, input, output } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { Session } from '../core/models';
-import { MinutesPipe } from '../core/minutes.pipe';
+import { DurationPipe } from '../core/minutes.pipe';
 
 /**
  * A list of entries. The child sees it without controls, which is the point:
@@ -10,7 +10,7 @@ import { MinutesPipe } from '../core/minutes.pipe';
  */
 @Component({
   selector: 'app-session-list',
-  imports: [MinutesPipe, MatButtonModule, MatIconModule],
+  imports: [DurationPipe, MatButtonModule, MatIconModule],
   styles: `
     ul {
       list-style: none;
@@ -102,7 +102,7 @@ import { MinutesPipe } from '../core/minutes.pipe';
               @if (session.running) {
                 <span i18n>running</span>
               } @else {
-                {{ session.minutes | minutes }}
+                {{ session.seconds | duration }}
               }
             </span>
             @if (editable()) {

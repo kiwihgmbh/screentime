@@ -24,6 +24,10 @@ public class MutableClock extends Clock {
         this.now = day.atTime(hour, minute).atZone(ZoneId.of("Europe/Zurich")).toInstant();
     }
 
+    public void advanceSeconds(long seconds) {
+        now = now.plusSeconds(seconds);
+    }
+
     public void advanceMinutes(long minutes) {
         this.now = now.plus(Duration.ofMinutes(minutes));
     }

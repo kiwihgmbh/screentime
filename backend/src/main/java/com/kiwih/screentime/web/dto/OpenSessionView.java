@@ -11,7 +11,11 @@ public record OpenSessionView(
         Long deviceId,
         String deviceName,
         Instant startedAt,
-        int elapsedMinutes,
-        /** the budget this session is spending: the quick budget, or available now */
-        int countdownAgainstMinutes) {
+        int elapsedSeconds,
+        /**
+         * the budget this session is spending, the quick budget or available
+         * now, as it was without this session: the countdown is this minus the
+         * time since {@code startedAt}
+         */
+        int countdownAgainstSeconds) {
 }

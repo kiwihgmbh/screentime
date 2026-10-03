@@ -5,12 +5,19 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ApiService, errorMessage } from '../../core/api.service';
 import { WeekSummary } from '../../core/models';
-import { MinutesPipe } from '../../core/minutes.pipe';
+import { DurationPipe, MinutesPipe } from '../../core/minutes.pipe';
 
 /** Past weeks, read only, with the outcome of each check spelled out. */
 @Component({
   selector: 'app-history',
-  imports: [MatCardModule, MatIconModule, MatButtonModule, MatProgressSpinnerModule, MinutesPipe],
+  imports: [
+    MatCardModule,
+    MatIconModule,
+    MatButtonModule,
+    MatProgressSpinnerModule,
+    MinutesPipe,
+    DurationPipe,
+  ],
   styles: `
     .stack {
       display: flex;
@@ -85,9 +92,9 @@ import { MinutesPipe } from '../../core/minutes.pipe';
               <div class="dates">
                 <div class="range">{{ range(week.weekStart) }}</div>
                 <div class="detail">
-                  <span i18n>budget {{ week.budgetMinutes | minutes }}</span>
-                  @if (week.adjustmentMinutes !== 0) {
-                    <span i18n>, corrections {{ week.adjustmentMinutes | minutes }}</span>
+                  <span i18n>budget {{ week.budgetSeconds | duration }}</span>
+                  @if (week.adjustmentSeconds !== 0) {
+                    <span i18n>, corrections {{ week.adjustmentSeconds | duration }}</span>
                   }
                   @if (week.holidayWeek) {
                     <span i18n>, holiday week</span>
@@ -98,7 +105,7 @@ import { MinutesPipe } from '../../core/minutes.pipe';
                 </div>
               </div>
               <div class="used">
-                <div class="big">{{ week.usedMinutes | minutes }}</div>
+                <div class="big">{{ week.usedSeconds | duration }}</div>
                 <div class="detail" i18n>used</div>
               </div>
               @if (week.check; as check) {

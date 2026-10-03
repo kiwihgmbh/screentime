@@ -54,22 +54,23 @@ public class AutoCloseScheduler {
     /** Returns how many sessions were closed. Visible for tests. */
     @Transactional
     public int closeAllOpen() {
-        ScreentimeRules rules = settingsService.rules();
         int closed = 0;
 
         for (Session open : sessions.allOpenSessions()) {
-            LocalDate startDay = rules.calendar().dayOf(open.getStartedAt());
+            LocalDate startDay = settingsService.calendar().dayOf(open.getStartedAt());
+            // the session is charged against the week it started in, with that week's values
+            ScreentimeRules rules = settingsService.rulesFor(startDay);
             LocalDate weekStart = rules.calendar().weekStartOf(startDay);
             WeekState week = weeks.state(weekStart);
             Instant closeAt = rules.calendar().autoCloseMoment(startDay);
 
             Balance before = balances.balanceOfClosedSessions(
                     open.getUserId(), startDay, week, rules);
-            int minutes = rules.autoCloseMinutes(
+            int seconds = rules.autoCloseSeconds(
                     open.getType(), open.getStartedAt(), closeAt, before);
 
-            sessions.closeAutomatically(open, closeAt, minutes, null);
-            log.info("Auto closed session {} on {} with {} minutes.", open.getId(), startDay, minutes);
+            sessions.closeAutomatically(open, closeAt, seconds, null);
+            log.info("Auto closed session {} on {} with {} seconds.", open.getId(), startDay, seconds);
             closed++;
         }
         return closed;

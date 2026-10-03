@@ -99,10 +99,13 @@ class StatusCodeOverHttpTest extends PostgresTestBase {
     }
 
     @Test
-    void aChildCanReadTheSettingsTheRulesPageShows() {
-        ResponseEntity<Map<String, Object>> response = get("/api/settings", childToken);
+    void aChildCanReadTheValuesTheRulesPageShows() {
+        ResponseEntity<Map<String, Object>> response = get("/api/settings/effective", childToken);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(response.getBody()).containsEntry("cutoffHour", "20");
+        assertThat(response.getBody()).containsEntry("scope", "TERM");
+        assertThat(get("/api/settings", childToken).getStatusCode())
+                .as("the overview with its change log is the parents'")
+                .isEqualTo(HttpStatus.FORBIDDEN);
     }
 
     @Test

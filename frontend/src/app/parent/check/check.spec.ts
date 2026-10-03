@@ -30,10 +30,20 @@ describe('CheckComponent', () => {
       { id: 1, name: 'iPad', active: true },
       { id: 2, name: 'TV', active: true },
     ]);
-    http.expectOne('/api/settings').flush({
-      toleranceMinutes: '10',
-      maxPenaltyMinutes: '120',
-      deliberatePenaltyMinutes: '60',
+    // the week's own values, not today's
+    const effective = http.expectOne((r) => r.url === '/api/settings/effective');
+    expect(effective.request.params.get('week')).toBe(component['weekStart']());
+    effective.flush({
+      weekStart: '2026-09-28',
+      scope: 'TERM',
+      holidayDayCount: 0,
+      holidayWeekThresholdDays: 4,
+      holidayDays: [],
+      holidayPeriodNames: [],
+      bonusActive: false,
+      weeklyBudgetMinutes: 480,
+      values: { toleranceMinutes: 10, maxPenaltyMinutes: 120, deliberatePenaltyMinutes: 60 },
+      days: [],
     });
     fixture.detectChanges();
   });
@@ -96,27 +106,39 @@ describe('CheckComponent', () => {
     expect(inner().penalty()).toBe(60);
   });
 
+  it('compares the log to the nearest minute, the same way the server does', () => {
+    // 300 min 40 s logged: the devices would say 301
+    component['week'].set(week(300, 40));
+    inner().setReported(1, 301);
+    expect(inner().difference()).toBe(0);
+
+    // 300 min 29 s rounds down
+    component['week'].set(week(300, 29));
+    expect(inner().difference()).toBe(1);
+  });
+
   it('flags more booked than the devices saw without deducting anything', () => {
     inner().setReported(1, 200);
     expect(inner().verdictKind()).toBe('look');
     expect(inner().penalty()).toBe(0);
   });
 
-  function week(usedMinutes: number): Week {
+  function week(usedMinutes: number, extraSeconds = 0): Week {
+    const used = usedMinutes * 60 + extraSeconds;
     return {
       weekStart: '2026-09-28',
       balance: {
-        weeklyBudgetMinutes: 480,
-        adjustmentMinutes: 0,
-        weekUsedMinutes: usedMinutes,
-        remainingWeekMinutes: 480 - usedMinutes,
-        dailyCapMinutes: 60,
-        dayUsedMinutes: 0,
-        remainingTodayMinutes: 60,
-        quickBudgetMinutes: 15,
-        quickUsedMinutes: 0,
-        remainingQuickMinutes: 15,
-        availableNowMinutes: 60,
+        weeklyBudgetSeconds: 480 * 60,
+        adjustmentSeconds: 0,
+        weekUsedSeconds: used,
+        remainingWeekSeconds: 480 * 60 - used,
+        dailyCapSeconds: 60 * 60,
+        dayUsedSeconds: 0,
+        remainingTodaySeconds: 60 * 60,
+        quickBudgetSeconds: 15 * 60,
+        quickUsedSeconds: 0,
+        remainingQuickSeconds: 15 * 60,
+        availableNowSeconds: 60 * 60,
       },
       holidayWeek: false,
       bonusActive: false,

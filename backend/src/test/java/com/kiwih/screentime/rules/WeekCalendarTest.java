@@ -176,7 +176,7 @@ class WeekCalendarTest {
             Instant start = zurich(2026, 10, 1, 19, 50);
             Instant end = zurich(2026, 10, 1, 20, 30);
             assertThat(calendar.dayOf(start)).isEqualTo(LocalDate.of(2026, 10, 1));
-            assertThat(calendar.minutesBetween(start, end)).isEqualTo(40);
+            assertThat(calendar.secondsBetween(start, end)).isEqualTo(40 * 60);
         }
 
         @Test
@@ -187,21 +187,29 @@ class WeekCalendarTest {
                     .as("started on Sunday, so it is Sunday's time and that week's time")
                     .isEqualTo(LocalDate.of(2026, 10, 4));
             assertThat(calendar.weekStartOf(start)).isEqualTo(LocalDate.of(2026, 9, 28));
-            assertThat(calendar.minutesBetween(start, end)).isEqualTo(40);
+            assertThat(calendar.secondsBetween(start, end)).isEqualTo(40 * 60);
         }
 
         @Test
-        void partMinutesAreRoundedDown() {
+        void partMinutesAreKeptToTheSecond() {
             Instant start = Instant.parse("2026-10-01T10:00:00Z");
-            assertThat(calendar.minutesBetween(start, start.plusSeconds(59))).isZero();
-            assertThat(calendar.minutesBetween(start, start.plusSeconds(60))).isEqualTo(1);
-            assertThat(calendar.minutesBetween(start, start.plusSeconds(119))).isEqualTo(1);
+            assertThat(calendar.secondsBetween(start, start.plusSeconds(59))).isEqualTo(59);
+            assertThat(calendar.secondsBetween(start, start.plusSeconds(60))).isEqualTo(60);
+            assertThat(calendar.secondsBetween(start, start.plusSeconds(119))).isEqualTo(119);
         }
 
         @Test
-        void aNegativeRangeIsNeverNegativeMinutes() {
+        void partSecondsAreRoundedDown() {
+            // a stop never charges a second that has not fully passed
             Instant start = Instant.parse("2026-10-01T10:00:00Z");
-            assertThat(calendar.minutesBetween(start, start.minusSeconds(600))).isZero();
+            assertThat(calendar.secondsBetween(start, start.plusMillis(999))).isZero();
+            assertThat(calendar.secondsBetween(start, start.plusMillis(1999))).isEqualTo(1);
+        }
+
+        @Test
+        void aNegativeRangeIsNeverNegativeTime() {
+            Instant start = Instant.parse("2026-10-01T10:00:00Z");
+            assertThat(calendar.secondsBetween(start, start.minusSeconds(600))).isZero();
         }
 
         @Test
@@ -212,9 +220,9 @@ class WeekCalendarTest {
             Instant end = Instant.parse("2026-10-25T01:30:00Z");
             assertThat(start.atZone(ZURICH).toLocalTime()).isEqualTo(LocalTime.of(1, 30));
             assertThat(end.atZone(ZURICH).toLocalTime()).isEqualTo(LocalTime.of(2, 30));
-            assertThat(calendar.minutesBetween(start, end))
-                    .as("minutes of use are real minutes, not clock readings")
-                    .isEqualTo(120);
+            assertThat(calendar.secondsBetween(start, end))
+                    .as("time of use is real time, not clock readings")
+                    .isEqualTo(120 * 60);
         }
     }
 

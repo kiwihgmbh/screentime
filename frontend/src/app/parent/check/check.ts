@@ -9,7 +9,7 @@ import { MatInputModule } from '@angular/material/input';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { ApiService, errorMessage } from '../../core/api.service';
 import { CheckResult, Device, Week } from '../../core/models';
-import { MinutesPipe } from '../../core/minutes.pipe';
+import { DurationPipe, MinutesPipe } from '../../core/minutes.pipe';
 import { WeekPickerComponent } from '../../shared/week-picker';
 
 /**
@@ -31,6 +31,7 @@ import { WeekPickerComponent } from '../../shared/week-picker';
     MatFormFieldModule,
     MatInputModule,
     MinutesPipe,
+    DurationPipe,
     WeekPickerComponent,
   ],
   styles: `
@@ -105,11 +106,12 @@ import { WeekPickerComponent } from '../../shared/week-picker';
             <h3 i18n>What the log says</h3>
             <dl class="sum">
               <dt i18n>Screen time booked this week</dt>
-              <dd class="total">{{ w.balance.weekUsedMinutes | minutes }}</dd>
+              <dd class="total">{{ w.balance.weekUsedSeconds | duration }}</dd>
             </dl>
             <p class="aside" i18n>
               Looking things up and film nights are outside the weekly budget, so they are outside
-              this comparison.
+              this comparison. The devices report whole minutes, so the log is compared to the
+              nearest minute.
             </p>
           </mat-card-content></mat-card
         >
@@ -140,7 +142,7 @@ import { WeekPickerComponent } from '../../shared/week-picker';
               <dt i18n>Reported</dt>
               <dd>{{ reportedTotal() | minutes }}</dd>
               <dt i18n>Logged</dt>
-              <dd>− {{ w.balance.weekUsedMinutes | minutes }}</dd>
+              <dd>− {{ loggedMinutes() | minutes }}</dd>
               <dt class="total" i18n>Difference</dt>
               <dd class="total">{{ difference() | minutes }}</dd>
             </dl>
@@ -236,15 +238,19 @@ export class CheckComponent {
   protected readonly deliberate = signal(false);
   protected readonly result = signal<CheckResult | null>(null);
   protected readonly busy = signal(false);
-  protected readonly settings = signal<Record<string, string>>({});
+  /** The values of the week being checked, not of today: a week is checked against its own rules. */
+  protected readonly settings = signal<Record<string, number>>({});
 
   protected readonly reportedTotal = computed(() =>
     Object.values(this.reported()).reduce((sum, value) => sum + (Number(value) || 0), 0),
   );
 
-  protected readonly difference = computed(
-    () => this.reportedTotal() - (this.week()?.balance.weekUsedMinutes ?? 0),
+  /** The log to the nearest minute, half up, the same rounding the server uses. */
+  protected readonly loggedMinutes = computed(() =>
+    Math.round((this.week()?.balance.weekUsedSeconds ?? 0) / 60),
   );
+
+  protected readonly difference = computed(() => this.reportedTotal() - this.loggedMinutes());
 
   private readonly tolerance = computed(() => Number(this.settings()['toleranceMinutes'] ?? 10));
 
@@ -287,11 +293,11 @@ export class CheckComponent {
       const [week, devices, settings] = await Promise.all([
         this.api.week(this.weekStart()),
         this.api.devices(),
-        this.api.settings(),
+        this.api.effectiveSettings(this.weekStart()),
       ]);
       this.week.set(week);
       this.devices.set(devices);
-      this.settings.set(settings);
+      this.settings.set(settings.values);
       this.weekStart.set(week.weekStart);
       this.deliberate.set(week.check?.deliberate ?? false);
       // a week that was checked before comes back with what was entered then

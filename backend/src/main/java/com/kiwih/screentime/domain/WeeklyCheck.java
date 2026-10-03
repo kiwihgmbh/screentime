@@ -41,6 +41,17 @@ public class WeeklyCheck {
     @Column(nullable = false)
     private boolean deliberate;
 
+    /** The weekly budget, bonus included, the week had when it was checked. */
+    @Column(name = "budget_minutes", nullable = false)
+    private int budgetMinutes;
+
+    @Column(name = "tolerance_minutes", nullable = false)
+    private int toleranceMinutes;
+
+    /** TERM or HOLIDAY: which set the week was checked against. */
+    @Column(name = "settings_scope", nullable = false, length = 8)
+    private String settingsScope;
+
     @Column(name = "checked_by", nullable = false)
     private Long checkedBy;
 
@@ -56,6 +67,7 @@ public class WeeklyCheck {
 
     public WeeklyCheck(LocalDate weekStart, int loggedMinutes, int reportedMinutes, int difference,
                        int penaltyMinutes, boolean clean, boolean deliberate,
+                       int budgetMinutes, int toleranceMinutes, String settingsScope,
                        Long checkedBy, Instant checkedAt, List<ReportedDevice> reported) {
         this.weekStart = weekStart;
         this.loggedMinutes = loggedMinutes;
@@ -64,6 +76,9 @@ public class WeeklyCheck {
         this.penaltyMinutes = penaltyMinutes;
         this.clean = clean;
         this.deliberate = deliberate;
+        this.budgetMinutes = budgetMinutes;
+        this.toleranceMinutes = toleranceMinutes;
+        this.settingsScope = settingsScope;
         this.checkedBy = checkedBy;
         this.checkedAt = checkedAt;
         this.reported = new ArrayList<>(reported);
@@ -99,6 +114,18 @@ public class WeeklyCheck {
 
     public boolean isDeliberate() {
         return deliberate;
+    }
+
+    public int getBudgetMinutes() {
+        return budgetMinutes;
+    }
+
+    public int getToleranceMinutes() {
+        return toleranceMinutes;
+    }
+
+    public String getSettingsScope() {
+        return settingsScope;
     }
 
     public Long getCheckedBy() {

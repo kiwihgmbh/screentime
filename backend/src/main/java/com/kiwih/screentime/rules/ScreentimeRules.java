@@ -15,21 +15,30 @@ import java.util.Objects;
  * what makes all of this testable without a Spring context, and it is also why
  * a date in a request body can never reach a decision made here.
  *
- * Built per request with the settings as they are at that moment, since
- * settings are rows a parent can change at any time.
+ * Built per week, from the values {@link SettingsResolver} decided apply to
+ * it. A week has one set of numbers from Monday to Sunday; only the daily
+ * ceiling of a holiday day in a term week comes from the holiday set.
  */
 public final class ScreentimeRules {
 
+    private final WeekSettings week;
     private final ScreentimeSettings settings;
     private final WeekCalendar calendar;
 
-    public ScreentimeRules(ScreentimeSettings settings, WeekCalendar calendar) {
-        this.settings = Objects.requireNonNull(settings, "settings");
+    public ScreentimeRules(WeekSettings week, WeekCalendar calendar) {
+        this.week = Objects.requireNonNull(week, "week");
+        this.settings = week.values();
         this.calendar = Objects.requireNonNull(calendar, "calendar");
     }
 
+    /** The values in force for this week: the term set or the holiday set, whichever won. */
     public ScreentimeSettings settings() {
         return settings;
+    }
+
+    /** Which set won, and the holiday days behind that decision. */
+    public WeekSettings week() {
+        return week;
     }
 
     public WeekCalendar calendar() {
@@ -39,16 +48,17 @@ public final class ScreentimeRules {
     // ---------------------------------------------------------------- budgets
 
     /**
-     * The ceiling in force on one day. The weekday decides, unless the week is
-     * flagged as a holiday week, in which case the weekend ceiling applies
-     * every day. An active bonus raises the weekend ceiling only.
+     * The ceiling in force on one day. The weekday decides between the weekday
+     * and the weekend ceiling; the day decides which set they come from, the
+     * holiday set on a holiday day or in a holiday week. An active bonus raises
+     * the weekend ceiling only.
      */
-    public int dailyCapMinutes(LocalDate day, WeekState week) {
-        boolean weekendCeiling = week.holiday() || calendar.isWeekend(day);
-        if (!weekendCeiling) {
-            return settings.weekdayCapMinutes();
+    public int dailyCapMinutes(LocalDate day, WeekState state) {
+        ScreentimeSettings values = week.ceilingValuesFor(day);
+        if (!calendar.isWeekend(day)) {
+            return values.weekdayCapMinutes();
         }
-        return week.bonusActive() ? settings.bonusWeekendCapMinutes() : settings.weekendCapMinutes();
+        return state.bonusActive() ? values.bonusWeekendCapMinutes() : values.weekendCapMinutes();
     }
 
     /** The weekly budget, raised by the bonus when the previous week was clean. */
@@ -57,16 +67,18 @@ public final class ScreentimeRules {
     }
 
     /**
-     * The whole account for one day, derived from the week's bookings.
+     * The whole account for one day, derived from the week's bookings, in
+     * seconds. The settings are minutes and are converted here, once.
      *
      * Unused time expires: yesterday's leftover is not in here anywhere, and
      * neither is last week's. Available now is the smaller of what the week has
      * left and what the day has left, because both have to allow it.
      */
     public Balance balance(LocalDate day, WeekState week, List<Booking> weekBookings, int adjustmentMinutes) {
-        int weeklyBudget = weeklyBudgetMinutes(week);
-        int dailyCap = dailyCapMinutes(day, week);
-        int quickBudget = settings.quickDailyMinutes();
+        int weeklyBudget = Durations.seconds(weeklyBudgetMinutes(week));
+        int adjustment = Durations.seconds(adjustmentMinutes);
+        int dailyCap = Durations.seconds(dailyCapMinutes(day, week));
+        int quickBudget = Durations.seconds(settings.quickDailyMinutes());
 
         int weekUsed = 0;
         int dayUsed = 0;
@@ -74,22 +86,22 @@ public final class ScreentimeRules {
         for (Booking booking : weekBookings) {
             boolean today = calendar.dayOf(booking.startedAt()).equals(day);
             if (booking.type().countsAgainstWeek()) {
-                weekUsed += booking.minutes();
+                weekUsed += booking.seconds();
             }
             if (today && booking.type().countsAgainstDailyCap()) {
-                dayUsed += booking.minutes();
+                dayUsed += booking.seconds();
             }
             if (today && booking.type() == SessionType.QUICK) {
-                quickUsed += booking.minutes();
+                quickUsed += booking.seconds();
             }
         }
 
-        int remainingWeek = atLeastZero(weeklyBudget + adjustmentMinutes - weekUsed);
+        int remainingWeek = atLeastZero(weeklyBudget + adjustment - weekUsed);
         int remainingToday = atLeastZero(dailyCap - dayUsed);
         int remainingQuick = atLeastZero(quickBudget - quickUsed);
 
         return new Balance(
-                weeklyBudget, adjustmentMinutes, weekUsed, remainingWeek,
+                weeklyBudget, adjustment, weekUsed, remainingWeek,
                 dailyCap, dayUsed, remainingToday,
                 quickBudget, quickUsed, remainingQuick,
                 Math.min(remainingWeek, remainingToday));
@@ -174,7 +186,7 @@ public final class ScreentimeRules {
     // ------------------------------------------------------------- auto close
 
     /**
-     * What a session still running at 23:59 is charged.
+     * What a session still running at 23:59 is charged, in seconds.
      *
      * The elapsed time is capped at what the day had left, so one forgotten
      * stop cannot wipe out a week. The parent sees the flag and decides whether
@@ -182,12 +194,12 @@ public final class ScreentimeRules {
      *
      * The balance passed in is the one without this session in it.
      */
-    public int autoCloseMinutes(SessionType type, Instant startedAt, Instant closeAt,
+    public int autoCloseSeconds(SessionType type, Instant startedAt, Instant closeAt,
                                 Balance balanceWithoutThisSession) {
-        int elapsed = calendar.minutesBetween(startedAt, closeAt);
+        int elapsed = calendar.secondsBetween(startedAt, closeAt);
         return switch (type) {
-            case FUN -> Math.min(elapsed, balanceWithoutThisSession.remainingTodayMinutes());
-            case QUICK -> Math.min(elapsed, balanceWithoutThisSession.remainingQuickMinutes());
+            case FUN -> Math.min(elapsed, balanceWithoutThisSession.remainingTodaySeconds());
+            case QUICK -> Math.min(elapsed, balanceWithoutThisSession.remainingQuickSeconds());
             // a film costs nothing, so there is nothing to protect
             case FILM -> elapsed;
         };
@@ -208,6 +220,9 @@ public final class ScreentimeRules {
      * A week marked deliberate is never clean, even when the numbers match: the
      * parent is saying the child used a second account or changed a clock, and
      * handing that week a bonus hour would make the whole check worthless.
+     *
+     * The log is passed in minutes, already rounded with
+     * {@link Durations#nearestMinute}, because the devices report minutes.
      */
     public CheckOutcome weeklyCheck(int loggedMinutes, int reportedMinutes, boolean deliberate) {
         int difference = reportedMinutes - loggedMinutes;

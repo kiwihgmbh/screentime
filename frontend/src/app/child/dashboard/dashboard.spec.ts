@@ -80,6 +80,22 @@ describe('DashboardComponent', () => {
     expect(text()).toContain('bike left outside');
   });
 
+  it('shows how long an entry was to the second', async () => {
+    await render({
+      ...account(),
+      todayEntries: [{ ...account().todayEntries[0], seconds: 40 }],
+    });
+    expect(text()).toContain('40 s');
+  });
+
+  it('shows what is left to the second', async () => {
+    await render({
+      ...account(),
+      balance: { ...account().balance, remainingTodaySeconds: 39 * 60 + 20 },
+    });
+    expect(text()).toContain('39 min 20 s');
+  });
+
   it('shows a running session with a countdown and only a stop control', async () => {
     await render({
       ...account(),
@@ -89,8 +105,9 @@ describe('DashboardComponent', () => {
         deviceId: 1,
         deviceName: 'iPad',
         startedAt: new Date(Date.now() - 5 * 60_000).toISOString(),
-        elapsedMinutes: 5,
-        countdownAgainstMinutes: 40,
+        elapsedSeconds: 5 * 60,
+        // what was available before the session took anything
+        countdownAgainstSeconds: 40 * 60,
       },
     });
 
@@ -110,15 +127,17 @@ describe('DashboardComponent', () => {
     await render({
       ...account(),
       bonusActive: true,
-      balance: { ...account().balance, weeklyBudgetMinutes: 540 },
+      balance: { ...account().balance, weeklyBudgetSeconds: 540 * 60 },
     });
     expect(text()).toContain('Last week matched');
+    // the bonus in force, not a number written into the page
+    expect(text()).toContain('extra 1 h');
   });
 
   it('says so plainly when the week is used up', async () => {
     await render({
       ...account(),
-      balance: { ...account().balance, remainingWeekMinutes: 0, availableNowMinutes: 0 },
+      balance: { ...account().balance, remainingWeekSeconds: 0, availableNowSeconds: 0 },
     });
 
     const headline = (fixture.nativeElement as HTMLElement).querySelector('.headline .value');
@@ -132,21 +151,33 @@ describe('DashboardComponent', () => {
       today: '2026-10-02',
       weekStart: '2026-09-28',
       balance: {
-        weeklyBudgetMinutes: 480,
-        adjustmentMinutes: -30,
-        weekUsedMinutes: 70,
-        remainingWeekMinutes: 380,
-        dailyCapMinutes: 60,
-        dayUsedMinutes: 20,
-        remainingTodayMinutes: 40,
-        quickBudgetMinutes: 15,
-        quickUsedMinutes: 0,
-        remainingQuickMinutes: 15,
-        availableNowMinutes: 40,
+        weeklyBudgetSeconds: 480 * 60,
+        adjustmentSeconds: -30 * 60,
+        weekUsedSeconds: 70 * 60,
+        remainingWeekSeconds: 380 * 60,
+        dailyCapSeconds: 60 * 60,
+        dayUsedSeconds: 20 * 60,
+        remainingTodaySeconds: 40 * 60,
+        quickBudgetSeconds: 15 * 60,
+        quickUsedSeconds: 0,
+        remainingQuickSeconds: 15 * 60,
+        availableNowSeconds: 40 * 60,
       },
       holidayWeek: false,
       bonusActive: false,
       cutoffHour: 20,
+      rules: {
+        weekStart: '2026-09-28',
+        scope: 'TERM',
+        holidayDayCount: 0,
+        holidayWeekThresholdDays: 4,
+        holidayDays: [],
+        holidayPeriodNames: [],
+        bonusActive: false,
+        weeklyBudgetMinutes: 480,
+        values: { weeklyMinutes: 480, bonusMinutes: 60, cutoffHour: 20 },
+        days: [],
+      },
       screensOff: false,
       week: [
         day('2026-09-28', 'MONDAY', 60, 50),
@@ -167,7 +198,7 @@ describe('DashboardComponent', () => {
           deviceName: 'iPad',
           startedAt: '2026-10-02T14:00:00Z',
           endedAt: '2026-10-02T14:20:00Z',
-          minutes: 20,
+          seconds: 20 * 60,
           running: false,
           autoClosed: false,
         },
@@ -198,10 +229,10 @@ describe('DashboardComponent', () => {
     return {
       date,
       dayOfWeek,
-      capMinutes: cap,
-      usedMinutes: used,
-      remainingMinutes: Math.max(0, cap - used),
-      quickUsedMinutes: 0,
+      capSeconds: cap * 60,
+      usedSeconds: used * 60,
+      remainingSeconds: Math.max(0, cap - used) * 60,
+      quickUsedSeconds: 0,
       today: false,
       future: false,
     };

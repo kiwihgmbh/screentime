@@ -12,7 +12,8 @@ import java.time.Clock;
 /**
  * Writes the trail. Every create, update and delete on a session or an
  * adjustment lands here, and so does every change to a check, a setting, a
- * week flag or an account, because those change what a number means too.
+ * holiday period, a week flag or an account, because those change what a
+ * number means too.
  *
  * The old and new values are stored as JSON. Nothing reads them back
  * programmatically; they exist so a parent can answer "why is this number
@@ -27,6 +28,7 @@ public class AuditService {
     public static final String SETTING = "SETTING";
     public static final String WEEK_FLAG = "WEEK_FLAG";
     public static final String USER = "USER";
+    public static final String HOLIDAY_PERIOD = "HOLIDAY_PERIOD";
 
     private final AuditLogRepository auditLog;
     private final ObjectMapper objectMapper;

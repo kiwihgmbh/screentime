@@ -20,6 +20,8 @@ public record AccountView(
         boolean holidayWeek,
         boolean bonusActive,
         int cutoffHour,
+        /** the values in force this week and why, so the child sees "holiday rules" and not just a bigger number */
+        EffectiveSettingsView rules,
         /** the cut off has passed: screens are off for the evening */
         boolean screensOff,
         OpenSessionView openSession,

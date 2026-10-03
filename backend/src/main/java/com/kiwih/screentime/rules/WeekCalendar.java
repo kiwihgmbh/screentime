@@ -86,13 +86,12 @@ public final class WeekCalendar {
     }
 
     /**
-     * Whole minutes of real elapsed time, rounded down and never negative.
-     * Rounding down keeps a stop predictable for the child: the number on the
-     * screen is the number that is charged.
+     * Whole seconds of real elapsed time, never negative. A part second is
+     * dropped, so a stop never charges a second that has not fully passed.
      */
-    public int minutesBetween(Instant from, Instant to) {
-        long minutes = Duration.between(from, to).toMinutes();
-        return minutes <= 0 ? 0 : (int) Math.min(minutes, Integer.MAX_VALUE);
+    public int secondsBetween(Instant from, Instant to) {
+        long seconds = Duration.between(from, to).getSeconds();
+        return seconds <= 0 ? 0 : (int) Math.min(seconds, Integer.MAX_VALUE);
     }
 
     /**

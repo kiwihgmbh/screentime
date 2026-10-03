@@ -76,29 +76,32 @@ public class BalanceService {
                                            ScreentimeRules rules) {
         List<Booking> bookings = sessionsOfWeek(userId, week.weekStart(), rules.calendar()).stream()
                 .filter(s -> !s.isOpen())
-                .map(s -> new Booking(s.getType(), s.getStartedAt(), s.countedMinutes()))
+                .map(s -> new Booking(s.getType(), s.getStartedAt(), s.countedSeconds()))
                 .toList();
         return rules.balance(day, week, bookings, adjustmentMinutes(week.weekStart()));
     }
 
     /**
-     * A running session contributes the minutes it has used so far. A closed one
+     * A running session contributes the seconds it has used so far. A closed one
      * contributes what was recorded.
      */
     public List<Booking> toBookings(List<Session> sessions, ScreentimeRules rules, Instant now) {
         return sessions.stream()
-                .map(s -> new Booking(s.getType(), s.getStartedAt(),
-                        s.isOpen() ? rules.calendar().minutesBetween(s.getStartedAt(), now)
-                                   : s.countedMinutes()))
+                .map(s -> new Booking(s.getType(), s.getStartedAt(), usedSeconds(s, rules.calendar(), now)))
                 .toList();
     }
 
-    /** The FUN minutes a week has logged. This is the number the weekly check compares. */
+    /** What a session has used: so far, if it is still running. */
+    public static int usedSeconds(Session s, WeekCalendar calendar, Instant now) {
+        return s.isOpen() ? calendar.secondsBetween(s.getStartedAt(), now) : s.countedSeconds();
+    }
+
+    /** The FUN seconds a week has logged. Rounded to minutes, this is what the weekly check compares. */
     @Transactional(readOnly = true)
-    public int loggedFunMinutes(Long userId, LocalDate weekStart, WeekCalendar calendar) {
+    public int loggedFunSeconds(Long userId, LocalDate weekStart, WeekCalendar calendar) {
         return sessionsOfWeek(userId, weekStart, calendar).stream()
                 .filter(s -> s.getType().countsAgainstWeek())
-                .mapToInt(Session::countedMinutes)
+                .mapToInt(Session::countedSeconds)
                 .sum();
     }
 }

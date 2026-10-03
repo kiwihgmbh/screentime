@@ -29,7 +29,7 @@ class AutoCloseTest extends ApiTestBase {
         assertThat(scheduler.closeAllOpen()).isEqualTo(1);
 
         Map<String, Object> row = jdbc.queryForMap(
-                "select minutes, auto_closed, ended_at from sessions where id = ?", id);
+                "select duration_seconds / 60 as minutes, auto_closed, ended_at from sessions where id = ?", id);
         assertThat(row.get("auto_closed")).isEqualTo(true);
         assertThat(row.get("minutes"))
                 .as("nearly eight hours elapsed, but the day only had 60 minutes left")
@@ -49,7 +49,7 @@ class AutoCloseTest extends ApiTestBase {
         time.setLocal(FRIDAY, 23, 59);
         scheduler.closeAllOpen();
 
-        assertThat(jdbc.queryForObject("select minutes from sessions where id = ?", Integer.class, id))
+        assertThat(jdbc.queryForObject("select duration_seconds / 60 from sessions where id = ?", Integer.class, id))
                 .isEqualTo(15);
     }
 
@@ -63,19 +63,19 @@ class AutoCloseTest extends ApiTestBase {
 
         time.setLocal(SATURDAY, 9, 0);
         JsonNode balance = currentAsChild().get("balance");
-        assertThat(balance.get("weekUsedMinutes").asInt()).isEqualTo(60);
-        assertThat(balance.get("remainingWeekMinutes").asInt())
+        assertThat(balance.get("weekUsedSeconds").asInt()).isEqualTo(60 * 60);
+        assertThat(balance.get("remainingWeekSeconds").asInt())
                 .as("420 of 480 left, not nothing")
-                .isEqualTo(420);
-        assertThat(balance.get("remainingTodayMinutes").asInt())
+                .isEqualTo(420 * 60);
+        assertThat(balance.get("remainingTodaySeconds").asInt())
                 .as("Saturday starts fresh")
-                .isEqualTo(120);
+                .isEqualTo(120 * 60);
     }
 
     @Test
     void aSessionShorterThanWhatTheDayHadLeftIsChargedInFull() throws Exception {
         // a generous ceiling, so the elapsed time is the smaller of the two
-        asParent(put("/api/settings"), Map.of("weekdayCapMinutes", "300"))
+        asParent(put("/api/settings"), Map.of("scope", "TERM", "values", Map.of("weekdayCapMinutes", "300")))
                 .andExpect(status().isOk());
 
         time.setLocal(FRIDAY, 19, 59);
@@ -85,7 +85,7 @@ class AutoCloseTest extends ApiTestBase {
         time.setLocal(FRIDAY, 23, 59);
         scheduler.closeAllOpen();
 
-        assertThat(jdbc.queryForObject("select minutes from sessions where id = ?", Integer.class, id))
+        assertThat(jdbc.queryForObject("select duration_seconds / 60 from sessions where id = ?", Integer.class, id))
                 .as("240 minutes elapsed and the day had 300, so the cap does not bind")
                 .isEqualTo(240);
     }
@@ -99,7 +99,7 @@ class AutoCloseTest extends ApiTestBase {
         time.setLocal(FRIDAY, 23, 59);
         scheduler.closeAllOpen();
 
-        assertThat(jdbc.queryForObject("select minutes from sessions where id = ?", Integer.class, id))
+        assertThat(jdbc.queryForObject("select duration_seconds / 60 from sessions where id = ?", Integer.class, id))
                 .isEqualTo(15);
     }
 
@@ -114,14 +114,14 @@ class AutoCloseTest extends ApiTestBase {
         scheduler.closeAllOpen();
 
         Map<String, Object> row = jdbc.queryForMap(
-                "select minutes, ended_at from sessions where id = ?", id);
+                "select duration_seconds / 60 as minutes, ended_at from sessions where id = ?", id);
         assertThat(row.get("minutes")).isEqualTo(60);
 
         JsonNode week = readBody(asParent(get("/api/account/week").param("start", MONDAY.toString())));
-        assertThat(week.get("days").get(0).get("usedMinutes").asInt())
+        assertThat(week.get("days").get(0).get("usedSeconds").asInt())
                 .as("the minutes stay on the Monday the session started on")
-                .isEqualTo(60);
-        assertThat(week.get("days").get(4).get("usedMinutes").asInt())
+                .isEqualTo(60 * 60);
+        assertThat(week.get("days").get(4).get("usedSeconds").asInt())
                 .as("and never land on the Friday the sweep happened to run")
                 .isZero();
     }
@@ -139,7 +139,7 @@ class AutoCloseTest extends ApiTestBase {
                 select new_value from audit_log
                 where entity = 'SESSION' and entity_id = ? and action = 'UPDATE'
                 """, String.class, id);
-        assertThat(newValue).contains("\"autoClosed\":true").contains("\"minutes\":60");
+        assertThat(newValue).contains("\"autoClosed\":true").contains("\"seconds\":3600");
     }
 
     @Test
@@ -155,7 +155,7 @@ class AutoCloseTest extends ApiTestBase {
         assertThat(entries.get(0).get("autoClosed").asBoolean()).isTrue();
 
         asParent(put("/api/sessions/" + id), Map.of("minutes", 20)).andExpect(status().isOk());
-        assertThat(jdbc.queryForObject("select minutes from sessions where id = ?", Integer.class, id))
+        assertThat(jdbc.queryForObject("select duration_seconds / 60 from sessions where id = ?", Integer.class, id))
                 .isEqualTo(20);
     }
 
@@ -175,7 +175,7 @@ class AutoCloseTest extends ApiTestBase {
         time.setLocal(fallBack, 23, 59);
         scheduler.closeAllOpen();
 
-        assertThat(jdbc.queryForObject("select minutes from sessions where id = ?", Integer.class, id))
+        assertThat(jdbc.queryForObject("select duration_seconds / 60 from sessions where id = ?", Integer.class, id))
                 .as("a Sunday ceiling is 120 minutes whether the day is 24 or 25 hours long")
                 .isEqualTo(120);
     }

@@ -2,7 +2,6 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
-import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
@@ -10,14 +9,14 @@ import { MatSelectModule } from '@angular/material/select';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { ApiService, errorMessage } from '../../core/api.service';
 import { Device, Session, SessionType, Week } from '../../core/models';
-import { MinutesPipe } from '../../core/minutes.pipe';
+import { DurationPipe, MinutesPipe } from '../../core/minutes.pipe';
 import { SessionListComponent } from '../../shared/session-list';
 import { WeekPickerComponent } from '../../shared/week-picker';
 
 /**
  * One week, day by day, with the controls a parent needs: correct an entry,
- * delete one, book a day that was missed, adjust the week with a reason, and
- * mark the week as a holiday week.
+ * delete one, book a day that was missed, and adjust the week with a reason.
+ * Whether a week is a holiday week follows from the holiday periods.
  */
 @Component({
   selector: 'app-parent-week',
@@ -29,8 +28,8 @@ import { WeekPickerComponent } from '../../shared/week-picker';
     MatSelectModule,
     MatFormFieldModule,
     MatInputModule,
-    MatCheckboxModule,
     MinutesPipe,
+    DurationPipe,
     SessionListComponent,
     WeekPickerComponent,
   ],
@@ -118,21 +117,19 @@ import { WeekPickerComponent } from '../../shared/week-picker';
           ><mat-card-content>
             <dl class="sum">
               <dt i18n>Budget</dt>
-              <dd>{{ w.balance.weeklyBudgetMinutes | minutes }}</dd>
+              <dd>{{ w.balance.weeklyBudgetSeconds | duration }}</dd>
               <dt i18n>Corrections</dt>
-              <dd>{{ w.balance.adjustmentMinutes | minutes }}</dd>
+              <dd>{{ w.balance.adjustmentSeconds | duration }}</dd>
               <dt i18n>Used</dt>
-              <dd>− {{ w.balance.weekUsedMinutes | minutes }}</dd>
+              <dd>− {{ w.balance.weekUsedSeconds | duration }}</dd>
               <dt class="total" i18n>Left</dt>
-              <dd class="total">{{ w.balance.remainingWeekMinutes | minutes }}</dd>
+              <dd class="total">{{ w.balance.remainingWeekSeconds | duration }}</dd>
             </dl>
-            <mat-checkbox
-              [ngModel]="w.holidayWeek"
-              (ngModelChange)="setHoliday($event)"
-              name="holiday"
-            >
-              <span i18n>Holiday week: the weekend ceiling applies every day</span>
-            </mat-checkbox>
+            @if (w.holidayWeek) {
+              <p class="aside" i18n>
+                This week counts as a holiday week: the holiday values apply.
+              </p>
+            }
             @if (w.bonusActive) {
               <p class="aside" i18n>
                 The bonus is active this week because the week before it matched.
@@ -251,9 +248,9 @@ import { WeekPickerComponent } from '../../shared/week-picker';
               <div class="day-head">
                 <span class="name">{{ dayLabel(day.date) }}</span>
                 <span class="numbers">
-                  {{ day.usedMinutes | minutes }} / {{ day.capMinutes | minutes }}
-                  @if (day.quickUsedMinutes > 0) {
-                    <span i18n>· {{ day.quickUsedMinutes | minutes }} looking up</span>
+                  {{ day.usedSeconds | duration }} / {{ day.capSeconds | duration }}
+                  @if (day.quickUsedSeconds > 0) {
+                    <span i18n>· {{ day.quickUsedSeconds | duration }} looking up</span>
                   }
                 </span>
               </div>
@@ -391,7 +388,8 @@ export class ParentWeekComponent {
 
   protected beginEdit(session: Session): void {
     this.editing.set(session);
-    this.editMinutes.set(session.minutes);
+    // corrections are whole minutes; the original stays untouched unless this changes
+    this.editMinutes.set(Math.round(session.seconds / 60));
     this.editDate.set(session.day);
     this.editDevice.set(session.deviceId);
     this.editType.set(session.type);
@@ -404,8 +402,11 @@ export class ParentWeekComponent {
       return;
     }
     await this.run(async () => {
+      const minutes = this.editMinutes();
       await this.api.updateSession(entry.id, {
-        minutes: this.editMinutes() ?? undefined,
+        // only sent when changed, so moving or retyping an entry keeps its seconds
+        minutes:
+          minutes !== null && minutes !== Math.round(entry.seconds / 60) ? minutes : undefined,
         deviceId: this.editDevice() ?? undefined,
         type: this.editType(),
         date: this.editDate() ?? undefined,
@@ -434,10 +435,6 @@ export class ParentWeekComponent {
 
   protected async removeAdjustment(id: number): Promise<void> {
     await this.run(() => this.api.deleteAdjustment(id));
-  }
-
-  protected async setHoliday(holiday: boolean): Promise<void> {
-    await this.run(() => this.api.setHoliday(this.weekStart(), holiday));
   }
 
   protected async book(): Promise<void> {

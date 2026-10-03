@@ -20,7 +20,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 class WeeklyCheckTest {
 
     private final ScreentimeRules rules = new ScreentimeRules(
-            ScreentimeSettings.DEFAULTS, new WeekCalendar(ZoneId.of("Europe/Zurich")));
+            WeekSettings.withoutHolidays(LocalDate.of(2026, 9, 28),
+                    ScreentimeSettings.TERM_DEFAULTS, ScreentimeSettings.HOLIDAY_DEFAULTS),
+            new WeekCalendar(ZoneId.of("Europe/Zurich")));
 
     @Nested
     @DisplayName("a week that matches is clean")

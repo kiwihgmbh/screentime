@@ -22,26 +22,74 @@ if they are missing. Further accounts are created in the app by a parent.
 
 ## Settings
 
-All values live in a `settings` table and are editable by a parent. These are
-the defaults.
+All values live in the `settings` table and are editable by a parent. Every
+setting exists twice: one value for term time, one for the holidays.
+
+| Key | Term default | Holiday default | Meaning |
+| --- | --- | --- | --- |
+| weeklyMinutes | 480 | 720 | Budget for the week, Monday to Sunday |
+| weekdayCapMinutes | 60 | 120 | Ceiling Monday to Friday |
+| weekendCapMinutes | 120 | 120 | Ceiling Saturday and Sunday |
+| quickDailyMinutes | 15 | 15 | Daily budget for looking things up |
+| cutoffHour | 20 | 21 | No session starts at or after this hour |
+| bonusMinutes | 60 | 60 | Added after a clean week |
+| bonusWeekendCapMinutes | 150 | 150 | Weekend ceiling while a bonus runs |
+| maxPenaltyMinutes | 120 | 120 | Largest deduction per check |
+| toleranceMinutes | 10 | 10 | Difference still counted as a match |
+| manualMaxMinutes | 240 | 240 | Largest single manual entry by the child |
+| deliberatePenaltyMinutes | 60 | 60 | Added to the penalty of a week marked deliberate |
+
+One more setting belongs to neither set, because it decides between them. It
+has the scope `GLOBAL`.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| weeklyMinutes | 480 | Budget per week, Monday to Sunday |
-| weekdayCapMinutes | 60 | Ceiling for Monday to Friday |
-| weekendCapMinutes | 120 | Ceiling for Saturday and Sunday |
-| quickDailyMinutes | 15 | Daily budget for looking things up |
-| cutoffHour | 20 | No session starts at or after this hour |
-| bonusMinutes | 60 | Added to the week after a clean week |
-| bonusWeekendCapMinutes | 150 | Weekend ceiling while a bonus is active |
-| maxPenaltyMinutes | 120 | Largest deduction a single check can cause |
-| toleranceMinutes | 10 | Difference still counted as a match |
-| manualMaxMinutes | 240 | Largest single manual entry a child may book |
+| holidayWeekThresholdDays | 4 | Holiday days that make a whole week a holiday week |
 
-The daily ceilings must add up to more than the weekly budget, otherwise the
-weekly budget never binds and only the daily ceilings do any work. With the
-defaults: 5 × 60 + 2 × 120 = 540 against a weekly 480. Validate this on save and
-reject a settings change that breaks it, with a message naming both numbers.
+### Holiday periods
+
+A parent enters the school holidays as periods: a name, a start date and an
+end date, both inclusive. A day is a holiday day if it falls inside a period.
+Periods never overlap; an overlapping one is refused with 409 naming the
+period in the way. Nothing is seeded.
+
+### Which set applies to a week
+
+Count the holiday days in the week. If `holidayWeekThresholdDays` or more of
+the seven are holiday days, the holiday set applies to the whole week.
+Otherwise the term set applies, but the daily ceiling on each individual
+holiday day uses the holiday value. Everything else in a term week, the weekly
+budget, the cut off and the quick budget, stays a term value.
+
+A weekly budget cannot be split across two value sets without becoming
+impossible to explain to a child. Daily ceilings can.
+
+### Settings are versioned
+
+A settings row is never changed in place. Changing a value writes a new row
+with the Monday from which it applies (`valid_from`). The values that apply to
+a week, the threshold included, are those in force on that week's Monday; two
+rows for the same Monday are decided by the later one. A change made today
+cannot alter last week's budget or a weekly check that already happened.
+Weekly checks also store the budget and tolerance they were computed against,
+so the history stays readable even if somebody later edits the past.
+
+### Validation
+
+A settings change is refused, with a message naming the actual numbers, when
+any of these fail. Each set is checked on its own, and every broken rule is
+reported at once.
+
+1. The daily ceilings exceed the weekly budget:
+   5 × weekdayCap + 2 × weekendCap > weeklyMinutes. Otherwise the weekly
+   budget never binds and only the daily ceilings do any work.
+2. The same holds in a bonus week:
+   weeklyMinutes + bonusMinutes < 5 × weekdayCap + 2 × bonusWeekendCap.
+3. bonusWeekendCapMinutes >= weekendCapMinutes.
+4. cutoffHour is between 12 and 23.
+5. Every minute value is >= 0, and weeklyMinutes <= 10080.
+
+holidayWeekThresholdDays is between 1 and 7.
 
 ## Session types
 
@@ -58,8 +106,8 @@ answer is there. FILM is the family film night on Friday, Saturday and Sunday.
 
 1. Unused time expires. Nothing carries to the next day or the next week.
 2. Available now is the minimum of the remaining week and the remaining day.
-3. The daily ceiling follows the weekday, unless the week is flagged as a
-   holiday week, in which case the weekend ceiling applies every day.
+3. The daily ceiling follows the weekday, and comes from the holiday set on a
+   holiday day or in a holiday week (see "Which set applies to a week").
 4. No session of any type starts at or after the cut off hour, except FILM.
 5. A clean week sets the bonus for the following week: the weekly budget rises
    by `bonusMinutes` and the weekend ceiling rises to `bonusWeekendCapMinutes`.
@@ -80,13 +128,21 @@ before anything else.
 - Daylight saving time means two days a year are 23 or 25 hours long. Budgets
   are in minutes of use and do not change on those days, but tests must cover
   the last Sunday in March and October so nobody later "fixes" a day length.
+- Time of use is counted in seconds. A timer session stores the whole seconds
+  that passed, so a 40 second session costs 40 seconds and part minutes add up
+  instead of being lost. Budgets, ceilings, adjustments and manual entries are
+  whole minutes, because that is what people enter. Balances are computed and
+  reported in seconds.
+- The weekly check compares the logged seconds, rounded to the nearest minute
+  (half up), with the whole minutes the devices report.
 - A session belongs to the local day on which it started. A session that starts
   at 19:50 and ends at 20:30 counts fully to that day.
 - One open session per user at a time. Starting a second returns 409 with the id
   of the open one.
 - A scheduler closes any session still open at 23:59 local time, sets
-  `autoClosed = true`, and caps its duration at the remaining daily ceiling so
-  one forgotten stop cannot wipe out a week. Parents see the flag and decide.
+  `autoClosed = true`, and caps its duration at the remaining daily ceiling,
+  to the second, so one forgotten stop cannot wipe out a week. Parents see the
+  flag and decide.
 - A child may book manually only for the current local day, only before the cut
   off hour, and at most `manualMaxMinutes` in one entry. Any other date returns
   403. This is deliberate: without it, the weekly comparison is pointless.
@@ -102,17 +158,22 @@ out of sync is a bug that is very hard to find later.
 
 - `users`: id, username, password_hash, display_name, role, active, created_at
 - `devices`: id, name, active, sort_order
-- `settings`: key, value, updated_at, updated_by
-- `sessions`: id, user_id, started_at, ended_at, minutes, device_id, type,
-  source (TIMER, MANUAL), created_by, auto_closed, note
+- `settings`: id, scope (TERM, HOLIDAY, GLOBAL), key, value, valid_from (a
+  Monday), created_by, created_at. Append only: the database refuses an update.
+- `holiday_periods`: id, name, start_date, end_date, created_by, created_at.
+  Both dates inclusive; the database refuses two periods sharing a day.
+- `sessions`: id, user_id, started_at, ended_at, duration_seconds, device_id,
+  type, source (TIMER, MANUAL), created_by, auto_closed, note
 - `adjustments`: id, week_start, minutes (signed), reason, created_by, created_at
 - `weekly_checks`: id, week_start, logged_minutes, reported_minutes, difference,
-  penalty_minutes, clean, deliberate, checked_by, checked_at
-- `week_flags`: week_start, holiday, bonus_active
+  penalty_minutes, clean, deliberate, budget_minutes, tolerance_minutes,
+  settings_scope, checked_by, checked_at
+- `week_flags`: week_start, bonus_active
 - `audit_log`: id, entity, entity_id, action, old_value, new_value, user_id, at
 
 Seed `devices` with iPad, iMac, Phone, PlayStation, TV. Seed `settings` with the
-defaults above. Seed no users.
+defaults above, in force since long before any week the app shows. Seed no
+users and no holiday periods.
 
 ## API
 
@@ -132,13 +193,51 @@ REST under `/api`, documented with springdoc OpenAPI.
 | DELETE | /api/sessions/{id} | PARENT | |
 | POST | /api/checks | PARENT | `{ weekStart, reported: [{deviceId, minutes}], deliberate }` |
 | POST | /api/adjustments | PARENT | `{ weekStart, minutes, reason }` |
-| PUT | /api/settings | PARENT | |
+| GET | /api/settings | PARENT | both value sets and the threshold: in force this week and next, every row, and the change log |
+| PUT | /api/settings | PARENT | `{ scope, values, validFrom? }`, see below |
+| GET | /api/settings/effective | all | `?week=YYYY-MM-DD`, the values in force for that week and why |
+| GET | /api/holidays | PARENT | `?from=&to=`, the periods sharing a day with the range, or all |
+| POST | /api/holidays | PARENT | `{ name, startDate, endDate }`; 409 naming the period it overlaps |
+| PUT | /api/holidays/{id} | PARENT | the same body; a period never conflicts with itself |
+| DELETE | /api/holidays/{id} | PARENT | |
 | GET/POST/PUT | /api/users | PARENT | |
+
+### Changing settings
+
+`PUT /api/settings` changes values of one scope (TERM, HOLIDAY or GLOBAL).
+`validFrom` is the Monday of the current week, which is the default, or next
+Monday; both are worked out from the server's clock and any other date returns
+400. The change is merged with the values in force on that Monday and
+validated as a whole, and again for every later Monday on which a change to
+the same scope is already planned, so a change this week cannot break one
+already made for next week. Only keys whose value differs get a new row. Every
+new row writes an audit entry with the old and the new value.
+
+The change log in `GET /api/settings` says who changed what, when, and from
+which value to which. Settings come from their own rows, the value before a
+row being the previous row for the same key; holiday periods come from the
+audit log.
+
+### The values in force
+
+`GET /api/settings/effective` returns, for one week: which set won (`scope`),
+how many holiday days the week has against `holidayWeekThresholdDays`, which
+days they are, the name of the holiday period if there is one, whether the
+bonus is active, the weekly budget with the bonus, every value of the winning
+set, and each day's ceiling. `GET /api/account/current` carries the same for
+the current week as `rules`, so the child's view can say "holiday rules"
+instead of showing an unexplained larger number.
+
+A weekly check also returns the budget, the tolerance and the scope it was
+computed against.
 
 `GET /api/account/current` returns everything the dashboard needs in one call:
 remaining week, remaining today, remaining quick budget, available now, the
 daily ceiling in force, bonus active, cut off hour, whether screens are off
-right now, the open session if there is one, and the seven day strip.
+right now, the open session if there is one, and the seven day strip. Every
+duration in it is in seconds. The open session carries what was available
+before it started, so the countdown is that minus the time since its start,
+however often the page is reloaded.
 
 ### The weekly check
 
@@ -171,11 +270,20 @@ Child view:
 - A running session showing a countdown against what is available
 - Today's entries, without a delete control
 - History of past weeks, read only
-- The rules in plain language as their own page
+- The rules in plain language as their own page, with the values in force this
+  week and a line naming why they are what they are: term or holiday rules,
+  and which days are holidays. No form controls on that page.
 
 Parent view adds:
 - The weekly check: reported minutes per device, difference computed live, save
-- Adjustments with a reason, settings, holiday flag, user management
+- Adjustments with a reason, settings, holiday periods, user management
+- The settings page: one sentence on what the current week runs on and why;
+  the term values and the holiday values, each field with its value in force,
+  its rule in one line and an inline error when the rule breaks, Save disabled
+  while any rule is broken, and a choice between this week and next week that
+  says which weeks it touches; the holiday periods as a list with add and
+  edit, warning when a period touches the current week and naming the days
+  that change; the threshold; and the change log at the bottom
 - Edit and delete sessions
 
 The child must always be able to see why a number is what it is. A balance that

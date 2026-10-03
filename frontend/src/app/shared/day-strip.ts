@@ -1,6 +1,6 @@
 import { Component, computed, input } from '@angular/core';
 import { Day } from '../core/models';
-import { MinutesPipe } from '../core/minutes.pipe';
+import { DurationPipe } from '../core/minutes.pipe';
 
 /**
  * The seven days of the week as one row, today marked.
@@ -11,7 +11,7 @@ import { MinutesPipe } from '../core/minutes.pipe';
  */
 @Component({
   selector: 'app-day-strip',
-  imports: [MinutesPipe],
+  imports: [DurationPipe],
   styles: `
     .strip {
       display: grid;
@@ -76,11 +76,11 @@ import { MinutesPipe } from '../core/minutes.pipe';
           <div class="bar">
             <div
               class="fill"
-              [class.full]="day.remainingMinutes === 0"
+              [class.full]="day.remainingSeconds === 0"
               [style.width.%]="usedShare(day)"
             ></div>
           </div>
-          <span class="left">{{ day.remainingMinutes | minutes }}</span>
+          <span class="left">{{ day.remainingSeconds | duration }}</span>
         </div>
       }
     </div>
@@ -94,9 +94,9 @@ export class DayStripComponent {
   }
 
   protected usedShare(day: Day): number {
-    if (day.capMinutes <= 0) {
+    if (day.capSeconds <= 0) {
       return 0;
     }
-    return Math.min(100, Math.round((day.usedMinutes / day.capMinutes) * 100));
+    return Math.min(100, Math.round((day.usedSeconds / day.capSeconds) * 100));
   }
 }

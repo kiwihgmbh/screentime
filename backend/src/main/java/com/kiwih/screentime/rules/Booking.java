@@ -5,18 +5,19 @@ import com.kiwih.screentime.domain.SessionType;
 import java.time.Instant;
 
 /**
- * Minutes already used, as the rules see them. A closed session contributes its
- * stored minutes; a session still running contributes the minutes elapsed so
- * far, so the child's countdown is honest while the timer runs.
+ * Time already used, in seconds, as the rules see them. A closed session
+ * contributes its stored duration; a session still running contributes the
+ * seconds elapsed so far, so the child's countdown is honest while the timer
+ * runs.
  *
- * The caller supplies the minutes. The rules never read a clock of their own,
+ * The caller supplies the seconds. The rules never read a clock of their own,
  * which is what makes them testable without stubbing time.
  */
-public record Booking(SessionType type, Instant startedAt, int minutes) {
+public record Booking(SessionType type, Instant startedAt, int seconds) {
 
     public Booking {
-        if (minutes < 0) {
-            throw new IllegalArgumentException("A booking cannot have negative minutes.");
+        if (seconds < 0) {
+            throw new IllegalArgumentException("A booking cannot have a negative duration.");
         }
     }
 }

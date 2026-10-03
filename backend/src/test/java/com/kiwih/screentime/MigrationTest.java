@@ -1,8 +1,9 @@
 package com.kiwih.screentime;
 
-import com.kiwih.screentime.domain.Setting;
 import com.kiwih.screentime.repo.*;
 import com.kiwih.screentime.rules.ScreentimeSettings;
+import com.kiwih.screentime.rules.SettingsScope;
+import com.kiwih.screentime.rules.SettingsValidator;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
@@ -33,16 +34,13 @@ class MigrationTest extends PostgresTestBase {
     @Autowired
     DeviceRepository devices;
 
-    @Autowired
-    SettingRepository settings;
-
     @Test
     void migrationsApplyAndEntitiesMatchTheSchema() {
         // reaching this point means Hibernate validated every entity against
         // the migrated schema during context startup
         Integer applied = jdbc.queryForObject(
                 "select count(*) from flyway_schema_history where success = true", Integer.class);
-        assertThat(applied).isEqualTo(3);
+        assertThat(applied).isEqualTo(5);
     }
 
     @Test
@@ -53,44 +51,71 @@ class MigrationTest extends PostgresTestBase {
     }
 
     @Test
-    void settingsAreSeededWithTheDocumentedDefaults() {
-        assertThat(settings.findAll()).hasSize(11);
-        assertThat(settings.findById("weeklyMinutes")).get()
-                .extracting(s -> s.getValue()).isEqualTo("480");
-        assertThat(settings.findById("weekdayCapMinutes")).get()
-                .extracting(s -> s.getValue()).isEqualTo("60");
-        assertThat(settings.findById("weekendCapMinutes")).get()
-                .extracting(s -> s.getValue()).isEqualTo("120");
-        assertThat(settings.findById("quickDailyMinutes")).get()
-                .extracting(s -> s.getValue()).isEqualTo("15");
-        assertThat(settings.findById("cutoffHour")).get()
-                .extracting(s -> s.getValue()).isEqualTo("20");
-        assertThat(settings.findById("bonusMinutes")).get()
-                .extracting(s -> s.getValue()).isEqualTo("60");
-        assertThat(settings.findById("bonusWeekendCapMinutes")).get()
-                .extracting(s -> s.getValue()).isEqualTo("150");
-        assertThat(settings.findById("maxPenaltyMinutes")).get()
-                .extracting(s -> s.getValue()).isEqualTo("120");
-        assertThat(settings.findById("toleranceMinutes")).get()
-                .extracting(s -> s.getValue()).isEqualTo("10");
-        assertThat(settings.findById("manualMaxMinutes")).get()
-                .extracting(s -> s.getValue()).isEqualTo("240");
-        assertThat(settings.findById("deliberatePenaltyMinutes")).get()
-                .extracting(s -> s.getValue()).isEqualTo("60");
+    void bothValueSetsAndTheThresholdAreSeededWithTheDocumentedDefaults() {
+        assertThat(seeded("TERM")).isEqualTo(ScreentimeSettings.TERM_DEFAULTS.toMap());
+        assertThat(seeded("HOLIDAY")).isEqualTo(ScreentimeSettings.HOLIDAY_DEFAULTS.toMap());
+        assertThat(seeded("GLOBAL")).containsExactly(Map.entry("holidayWeekThresholdDays", "4"));
     }
 
     @Test
-    void theSettingsTableHoldsExactlyTheKeysTheRulesReadAndTheSeededValuesAreValid() {
+    void theSeededValuesParseAndHoldTogether() {
         // drift between the migration and ScreentimeSettings would mean the
         // application starts and then fails the first time a balance is read
-        Map<String, String> seeded = settings.findAll().stream()
-                .collect(java.util.stream.Collectors.toMap(Setting::getKey, Setting::getValue));
+        SettingsValidator validator = new SettingsValidator();
+        assertThat(validator.validate(SettingsScope.TERM, ScreentimeSettings.fromMap(seeded("TERM")))).isEmpty();
+        assertThat(validator.validate(SettingsScope.HOLIDAY, ScreentimeSettings.fromMap(seeded("HOLIDAY")))).isEmpty();
+    }
 
-        assertThat(seeded.keySet())
-                .containsExactlyInAnyOrderElementsOf(ScreentimeSettings.KEYS);
-        assertThat(ScreentimeSettings.fromMap(seeded))
-                .as("the seeded rows parse and satisfy every settings invariant")
-                .isEqualTo(ScreentimeSettings.DEFAULTS);
+    @Test
+    void theSeededValuesAreInForceForEveryWeekTheAppCanShow() {
+        assertThat(jdbc.queryForList("select distinct valid_from::text from settings", String.class))
+                .containsExactly("2000-01-03");
+        assertThat(jdbc.queryForList("select distinct created_by from settings", Long.class))
+                .as("seeded, not created by anybody")
+                .containsExactly((Long) null);
+    }
+
+    @Test
+    void aSettingsRowCannotBeChangedInPlace() {
+        assertThatThrownBy(() -> jdbc.update(
+                "update settings set value = '400' where scope = 'TERM' and key = 'weeklyMinutes'"))
+                .hasMessageContaining("never changed in place");
+    }
+
+    @Test
+    void aSettingCanOnlyStartOnAMonday() {
+        assertThatThrownBy(() -> jdbc.update("""
+                insert into settings (scope, key, value, valid_from)
+                values ('TERM', 'weeklyMinutes', '400', date '2026-10-07')
+                """))
+                .hasMessageContaining("ck_settings_valid_from_monday");
+    }
+
+    @Test
+    void holidayPeriodsCannotShareADay() {
+        insertHoliday("Autumn holidays", "2026-10-10", "2026-10-25");
+
+        assertThatThrownBy(() -> insertHoliday("Camp", "2026-10-25", "2026-10-28"))
+                .as("the last day of one period is the first of the other")
+                .hasMessageContaining("ex_holiday_periods_overlap");
+    }
+
+    @Test
+    void holidayPeriodsThatOnlyTouchAreFine() {
+        insertHoliday("Autumn holidays", "2026-10-10", "2026-10-25");
+        insertHoliday("After", "2026-10-26", "2026-10-28");
+        assertThat(jdbc.queryForObject("select count(*) from holiday_periods", Integer.class)).isEqualTo(2);
+    }
+
+    @Test
+    void aHolidayPeriodCannotEndBeforeItStarts() {
+        assertThatThrownBy(() -> insertHoliday("Backwards", "2026-10-25", "2026-10-10"))
+                .hasMessageContaining("ck_holiday_periods_order");
+    }
+
+    @Test
+    void noHolidayPeriodsAreSeeded() {
+        assertThat(jdbc.queryForObject("select count(*) from holiday_periods", Integer.class)).isZero();
     }
 
     @Test
@@ -124,6 +149,9 @@ class MigrationTest extends PostgresTestBase {
                 """, String.class);
         assertThat(dates).containsExactly(
                 "adjustments.week_start",
+                "holiday_periods.end_date",
+                "holiday_periods.start_date",
+                "settings.valid_from",
                 "week_flags.week_start",
                 "weekly_checks.week_start");
     }
@@ -140,12 +168,12 @@ class MigrationTest extends PostgresTestBase {
     }
 
     @Test
-    void aClosedSessionWithoutMinutesIsRejected() {
+    void aClosedSessionWithoutADurationIsRejected() {
         long userId = insertUser("child2", "CHILD");
         long deviceId = jdbc.queryForObject("select id from devices where name = 'iPad'", Long.class);
 
         assertThatThrownBy(() -> jdbc.update("""
-                insert into sessions (user_id, started_at, ended_at, minutes, device_id, type, source, created_by)
+                insert into sessions (user_id, started_at, ended_at, duration_seconds, device_id, type, source, created_by)
                 values (?, now(), now(), null, ?, 'FUN', 'TIMER', ?)
                 """, userId, deviceId, userId))
                 .hasMessageContaining("ck_sessions_closed");
@@ -172,6 +200,18 @@ class MigrationTest extends PostgresTestBase {
                 .hasMessageContaining("uq_weekly_checks_week");
     }
 
+    private Map<String, String> seeded(String scope) {
+        Map<String, String> values = new java.util.HashMap<>();
+        jdbc.query("select key, value from settings where scope = ?",
+                rs -> { values.put(rs.getString(1), rs.getString(2)); }, scope);
+        return values;
+    }
+
+    private void insertHoliday(String name, String from, String to) {
+        jdbc.update("insert into holiday_periods (name, start_date, end_date) values (?, ?::date, ?::date)",
+                name, from, to);
+    }
+
     private long insertUser(String username, String role) {
         // a BCrypt shaped placeholder, not a usable credential
         return jdbc.queryForObject("""
@@ -191,8 +231,9 @@ class MigrationTest extends PostgresTestBase {
     private void insertCheck(long userId) {
         jdbc.update("""
                 insert into weekly_checks (week_start, logged_minutes, reported_minutes, difference,
-                                           penalty_minutes, clean, deliberate, checked_by)
-                values (date '2026-09-28', 400, 405, 5, 0, true, false, ?)
+                                           penalty_minutes, clean, deliberate, budget_minutes,
+                                           tolerance_minutes, settings_scope, checked_by)
+                values (date '2026-09-28', 400, 405, 5, 0, true, false, 480, 10, 'TERM', ?)
                 """, userId);
     }
 }

@@ -23,10 +23,12 @@ class ScreentimeRulesTest {
     private static final LocalDate SATURDAY = LocalDate.of(2026, 10, 3);
     private static final LocalDate SUNDAY = LocalDate.of(2026, 10, 4);
 
-    private final ScreentimeRules rules = new ScreentimeRules(ScreentimeSettings.DEFAULTS, CALENDAR);
+    private final ScreentimeRules rules = new ScreentimeRules(
+            WeekSettings.withoutHolidays(MONDAY, ScreentimeSettings.TERM_DEFAULTS, ScreentimeSettings.HOLIDAY_DEFAULTS),
+            CALENDAR);
 
     @Nested
-    @DisplayName("the daily ceiling follows the weekday, the holiday flag and the bonus")
+    @DisplayName("the daily ceiling follows the weekday and the bonus")
     class DailyCeiling {
 
         @Test
@@ -45,32 +47,16 @@ class ScreentimeRulesTest {
             assertThat(rules.dailyCapMinutes(SUNDAY, plainWeek())).isEqualTo(120);
         }
 
-        @Test
-        void aHolidayWeekGivesEveryDayTheWeekendCeiling() {
-            WeekState holiday = new WeekState(MONDAY, true, false);
-            for (LocalDate day : CALENDAR.daysOfWeek(MONDAY)) {
-                assertThat(rules.dailyCapMinutes(day, holiday))
-                        .as("%s of a holiday week", day.getDayOfWeek())
-                        .isEqualTo(120);
-            }
-        }
+        // holiday days and holiday weeks: SettingsResolverTest
 
         @Test
         void anActiveBonusRaisesOnlyTheWeekendCeiling() {
-            WeekState bonus = new WeekState(MONDAY, false, true);
+            WeekState bonus = new WeekState(MONDAY, true);
             assertThat(rules.dailyCapMinutes(FRIDAY, bonus))
                     .as("a school day is not affected by the bonus")
                     .isEqualTo(60);
             assertThat(rules.dailyCapMinutes(SATURDAY, bonus)).isEqualTo(150);
             assertThat(rules.dailyCapMinutes(SUNDAY, bonus)).isEqualTo(150);
-        }
-
-        @Test
-        void aHolidayWeekWithABonusGivesEveryDayTheRaisedWeekendCeiling() {
-            WeekState both = new WeekState(MONDAY, true, true);
-            for (LocalDate day : CALENDAR.daysOfWeek(MONDAY)) {
-                assertThat(rules.dailyCapMinutes(day, both)).isEqualTo(150);
-            }
         }
 
         @Test
@@ -93,14 +79,14 @@ class ScreentimeRulesTest {
 
         @Test
         void aBonusWeekGetsTheWeeklyBudgetPlusTheBonus() {
-            assertThat(rules.weeklyBudgetMinutes(new WeekState(MONDAY, false, true))).isEqualTo(540);
+            assertThat(rules.weeklyBudgetMinutes(new WeekState(MONDAY, true))).isEqualTo(540);
         }
 
         @Test
         void theBonusIsSetOrNotSetAndNeverAddsUpAcrossWeeks() {
             // two clean weeks in a row still mean one bonus, not two
-            WeekState first = new WeekState(MONDAY, false, true);
-            WeekState second = new WeekState(MONDAY.plusDays(7), false, true);
+            WeekState first = new WeekState(MONDAY, true);
+            WeekState second = new WeekState(MONDAY.plusDays(7), true);
             assertThat(rules.weeklyBudgetMinutes(first)).isEqualTo(540);
             assertThat(rules.weeklyBudgetMinutes(second))
                     .as("a second clean week does not stack to 600")
@@ -272,14 +258,14 @@ class ScreentimeRulesTest {
         @Test
         void anEmptyWeekLeavesTheWholeBudget() {
             Balance b = rules.balance(FRIDAY, plainWeek(), List.of(), 0);
-            assertThat(b.weeklyBudgetMinutes()).isEqualTo(480);
-            assertThat(b.remainingWeekMinutes()).isEqualTo(480);
-            assertThat(b.dailyCapMinutes()).isEqualTo(60);
-            assertThat(b.remainingTodayMinutes()).isEqualTo(60);
-            assertThat(b.remainingQuickMinutes()).isEqualTo(15);
-            assertThat(b.availableNowMinutes())
+            assertThat(b.weeklyBudgetSeconds()).isEqualTo(minutes(480));
+            assertThat(b.remainingWeekSeconds()).isEqualTo(minutes(480));
+            assertThat(b.dailyCapSeconds()).isEqualTo(minutes(60));
+            assertThat(b.remainingTodaySeconds()).isEqualTo(minutes(60));
+            assertThat(b.remainingQuickSeconds()).isEqualTo(minutes(15));
+            assertThat(b.availableNowSeconds())
                     .as("the day is the binding limit at the start of a week")
-                    .isEqualTo(60);
+                    .isEqualTo(minutes(60));
         }
 
         @Test
@@ -293,12 +279,12 @@ class ScreentimeRulesTest {
                     fun(SATURDAY, 10, 0, 120),
                     fun(SUNDAY, 10, 0, 90));
             Balance b = rules.balance(FRIDAY, plainWeek(), week, 0);
-            assertThat(b.weekUsedMinutes()).isEqualTo(450);
-            assertThat(b.remainingWeekMinutes()).isEqualTo(30);
-            assertThat(b.remainingTodayMinutes()).isEqualTo(60);
-            assertThat(b.availableNowMinutes())
+            assertThat(b.weekUsedSeconds()).isEqualTo(minutes(450));
+            assertThat(b.remainingWeekSeconds()).isEqualTo(minutes(30));
+            assertThat(b.remainingTodaySeconds()).isEqualTo(minutes(60));
+            assertThat(b.availableNowSeconds())
                     .as("the week is the binding limit now")
-                    .isEqualTo(30);
+                    .isEqualTo(minutes(30));
         }
 
         @Test
@@ -308,12 +294,12 @@ class ScreentimeRulesTest {
                     quick(FRIDAY, 15, 0, 10),
                     film(FRIDAY, 20, 30, 110));
             Balance b = rules.balance(FRIDAY, plainWeek(), week, 0);
-            assertThat(b.weekUsedMinutes()).isEqualTo(30);
-            assertThat(b.dayUsedMinutes()).isEqualTo(30);
-            assertThat(b.remainingWeekMinutes()).isEqualTo(450);
-            assertThat(b.remainingTodayMinutes()).isEqualTo(30);
-            assertThat(b.quickUsedMinutes()).isEqualTo(10);
-            assertThat(b.remainingQuickMinutes()).isEqualTo(5);
+            assertThat(b.weekUsedSeconds()).isEqualTo(minutes(30));
+            assertThat(b.dayUsedSeconds()).isEqualTo(minutes(30));
+            assertThat(b.remainingWeekSeconds()).isEqualTo(minutes(450));
+            assertThat(b.remainingTodaySeconds()).isEqualTo(minutes(30));
+            assertThat(b.quickUsedSeconds()).isEqualTo(minutes(10));
+            assertThat(b.remainingQuickSeconds()).isEqualTo(minutes(5));
         }
 
         @Test
@@ -322,22 +308,22 @@ class ScreentimeRulesTest {
                     quick(MONDAY, 9, 0, 15),
                     quick(FRIDAY, 9, 0, 5));
             Balance b = rules.balance(FRIDAY, plainWeek(), week, 0);
-            assertThat(b.quickUsedMinutes())
+            assertThat(b.quickUsedSeconds())
                     .as("Monday's quick minutes are not today's")
-                    .isEqualTo(5);
-            assertThat(b.remainingQuickMinutes()).isEqualTo(10);
-            assertThat(b.remainingWeekMinutes())
+                    .isEqualTo(minutes(5));
+            assertThat(b.remainingQuickSeconds()).isEqualTo(minutes(10));
+            assertThat(b.remainingWeekSeconds())
                     .as("quick never touches the weekly budget")
-                    .isEqualTo(480);
+                    .isEqualTo(minutes(480));
         }
 
         @Test
         void onlyTodayCountsAgainstTheDay() {
             List<Booking> week = List.of(fun(MONDAY, 10, 0, 60), fun(FRIDAY, 10, 0, 20));
             Balance b = rules.balance(FRIDAY, plainWeek(), week, 0);
-            assertThat(b.dayUsedMinutes()).isEqualTo(20);
-            assertThat(b.remainingTodayMinutes()).isEqualTo(40);
-            assertThat(b.weekUsedMinutes()).isEqualTo(80);
+            assertThat(b.dayUsedSeconds()).isEqualTo(minutes(20));
+            assertThat(b.remainingTodaySeconds()).isEqualTo(minutes(40));
+            assertThat(b.weekUsedSeconds()).isEqualTo(minutes(80));
         }
 
         @Test
@@ -345,52 +331,82 @@ class ScreentimeRulesTest {
             // started Thursday 23:50, so Friday's ceiling is untouched
             List<Booking> week = List.of(fun(FRIDAY.minusDays(1), 23, 50, 40));
             Balance b = rules.balance(FRIDAY, plainWeek(), week, 0);
-            assertThat(b.dayUsedMinutes()).isZero();
-            assertThat(b.remainingTodayMinutes()).isEqualTo(60);
-            assertThat(b.weekUsedMinutes()).isEqualTo(40);
+            assertThat(b.dayUsedSeconds()).isZero();
+            assertThat(b.remainingTodaySeconds()).isEqualTo(minutes(60));
+            assertThat(b.weekUsedSeconds()).isEqualTo(minutes(40));
         }
 
         @Test
         void aNegativeAdjustmentComesOffTheWeek() {
             Balance b = rules.balance(FRIDAY, plainWeek(), List.of(), -120);
-            assertThat(b.weeklyBudgetMinutes())
+            assertThat(b.weeklyBudgetSeconds())
                     .as("the budget itself is reported without the adjustment")
-                    .isEqualTo(480);
-            assertThat(b.adjustmentMinutes()).isEqualTo(-120);
-            assertThat(b.remainingWeekMinutes()).isEqualTo(360);
+                    .isEqualTo(minutes(480));
+            assertThat(b.adjustmentSeconds()).isEqualTo(minutes(-120));
+            assertThat(b.remainingWeekSeconds()).isEqualTo(minutes(360));
         }
 
         @Test
         void aPositiveAdjustmentIsAGift() {
             Balance b = rules.balance(FRIDAY, plainWeek(), List.of(), 30);
-            assertThat(b.remainingWeekMinutes()).isEqualTo(510);
+            assertThat(b.remainingWeekSeconds()).isEqualTo(minutes(510));
         }
 
         @Test
         void nothingEverGoesBelowZero() {
             List<Booking> week = List.of(fun(FRIDAY, 10, 0, 600), quick(FRIDAY, 9, 0, 90));
             Balance b = rules.balance(FRIDAY, plainWeek(), week, -200);
-            assertThat(b.remainingWeekMinutes()).isZero();
-            assertThat(b.remainingTodayMinutes()).isZero();
-            assertThat(b.remainingQuickMinutes()).isZero();
-            assertThat(b.availableNowMinutes()).isZero();
+            assertThat(b.remainingWeekSeconds()).isZero();
+            assertThat(b.remainingTodaySeconds()).isZero();
+            assertThat(b.remainingQuickSeconds()).isZero();
+            assertThat(b.availableNowSeconds()).isZero();
         }
 
         @Test
         void unusedTimeDoesNotCarryToTheNextDay() {
             // nothing used on Monday to Thursday, and Friday still only gets 60
             Balance b = rules.balance(FRIDAY, plainWeek(), List.of(), 0);
-            assertThat(b.remainingTodayMinutes())
+            assertThat(b.remainingTodaySeconds())
                     .as("four unused days do not become Friday's time")
-                    .isEqualTo(60);
+                    .isEqualTo(minutes(60));
+        }
+
+        @Test
+        void aSessionShorterThanAMinuteCostsItsSeconds() {
+            // 40 seconds used to round down to nothing, which made a string of
+            // short sessions free
+            List<Booking> week = List.of(new Booking(SessionType.FUN, at(FRIDAY, 16, 0), 40));
+            Balance b = rules.balance(FRIDAY, plainWeek(), week, 0);
+            assertThat(b.weekUsedSeconds()).isEqualTo(40);
+            assertThat(b.remainingTodaySeconds()).isEqualTo(minutes(60) - 40);
+            assertThat(b.remainingWeekSeconds()).isEqualTo(minutes(480) - 40);
+        }
+
+        @Test
+        void partMinutesAddUpInsteadOfBeingLost() {
+            // three sessions of 1 min 40 s are 5 minutes, not 3
+            List<Booking> week = List.of(
+                    new Booking(SessionType.FUN, at(FRIDAY, 14, 0), 100),
+                    new Booking(SessionType.FUN, at(FRIDAY, 15, 0), 100),
+                    new Booking(SessionType.FUN, at(FRIDAY, 16, 0), 100));
+            Balance b = rules.balance(FRIDAY, plainWeek(), week, 0);
+            assertThat(b.dayUsedSeconds()).isEqualTo(minutes(5));
+        }
+
+        @Test
+        void quickSecondsComeOffTheQuickBudget() {
+            List<Booking> week = List.of(new Booking(SessionType.QUICK, at(FRIDAY, 9, 0), 75));
+            Balance b = rules.balance(FRIDAY, plainWeek(), week, 0);
+            assertThat(b.quickUsedSeconds()).isEqualTo(75);
+            assertThat(b.remainingQuickSeconds()).isEqualTo(minutes(15) - 75);
         }
 
         @Test
         void aBonusWeekendIsVisibleInTheBalance() {
-            Balance b = rules.balance(SATURDAY, new WeekState(MONDAY, false, true), List.of(), 0);
-            assertThat(b.weeklyBudgetMinutes()).isEqualTo(540);
-            assertThat(b.dailyCapMinutes()).isEqualTo(150);
-            assertThat(b.availableNowMinutes()).isEqualTo(150);
+            Balance b = rules.balance(SATURDAY, new WeekState(MONDAY, true), List.of(), 0);
+            assertThat(b.weeklyBudgetSeconds()).isEqualTo(minutes(540));
+            assertThat(b.dailyCapSeconds()).isEqualTo(minutes(150));
+            assertThat(b.availableNowSeconds()).isEqualTo(minutes(150));
         }
     }
 
@@ -406,9 +422,9 @@ class ScreentimeRulesTest {
             Instant closeAt = at(FRIDAY, 23, 59);
             Balance before = rules.balance(FRIDAY, plainWeek(), List.of(), 0);
 
-            assertThat(CALENDAR.minutesBetween(started, closeAt)).isEqualTo(479);
-            assertThat(rules.autoCloseMinutes(SessionType.FUN, started, closeAt, before))
-                    .isEqualTo(60);
+            assertThat(CALENDAR.secondsBetween(started, closeAt)).isEqualTo(minutes(479));
+            assertThat(rules.autoCloseSeconds(SessionType.FUN, started, closeAt, before))
+                    .isEqualTo(minutes(60));
         }
 
         @Test
@@ -417,9 +433,9 @@ class ScreentimeRulesTest {
             Instant closeAt = at(FRIDAY, 23, 59);
             Balance before = rules.balance(FRIDAY, plainWeek(), List.of(fun(FRIDAY, 10, 0, 45)), 0);
 
-            assertThat(before.remainingTodayMinutes()).isEqualTo(15);
-            assertThat(rules.autoCloseMinutes(SessionType.FUN, started, closeAt, before))
-                    .isEqualTo(15);
+            assertThat(before.remainingTodaySeconds()).isEqualTo(minutes(15));
+            assertThat(rules.autoCloseSeconds(SessionType.FUN, started, closeAt, before))
+                    .isEqualTo(minutes(15));
         }
 
         @Test
@@ -427,8 +443,8 @@ class ScreentimeRulesTest {
             Instant started = at(FRIDAY, 23, 30);
             Instant closeAt = at(FRIDAY, 23, 59);
             Balance before = rules.balance(FRIDAY, plainWeek(), List.of(), 0);
-            assertThat(rules.autoCloseMinutes(SessionType.FUN, started, closeAt, before))
-                    .isEqualTo(29);
+            assertThat(rules.autoCloseSeconds(SessionType.FUN, started, closeAt, before))
+                    .isEqualTo(minutes(29));
         }
 
         @Test
@@ -436,8 +452,8 @@ class ScreentimeRulesTest {
             Instant started = at(FRIDAY, 9, 0);
             Instant closeAt = at(FRIDAY, 23, 59);
             Balance before = rules.balance(FRIDAY, plainWeek(), List.of(), 0);
-            assertThat(rules.autoCloseMinutes(SessionType.QUICK, started, closeAt, before))
-                    .isEqualTo(15);
+            assertThat(rules.autoCloseSeconds(SessionType.QUICK, started, closeAt, before))
+                    .isEqualTo(minutes(15));
         }
 
         @Test
@@ -445,8 +461,18 @@ class ScreentimeRulesTest {
             Instant started = at(FRIDAY, 20, 30);
             Instant closeAt = at(FRIDAY, 23, 59);
             Balance before = rules.balance(FRIDAY, plainWeek(), List.of(), 0);
-            assertThat(rules.autoCloseMinutes(SessionType.FILM, started, closeAt, before))
-                    .isEqualTo(209);
+            assertThat(rules.autoCloseSeconds(SessionType.FILM, started, closeAt, before))
+                    .isEqualTo(minutes(209));
+        }
+
+        @Test
+        void theCapIsExactToTheSecond() {
+            // 59 min 30 s used, so a forgotten session gets the last 30 seconds
+            Instant started = at(FRIDAY, 19, 0);
+            Instant closeAt = at(FRIDAY, 23, 59);
+            Balance before = rules.balance(FRIDAY, plainWeek(),
+                    List.of(new Booking(SessionType.FUN, at(FRIDAY, 10, 0), minutes(59) + 30)), 0);
+            assertThat(rules.autoCloseSeconds(SessionType.FUN, started, closeAt, before)).isEqualTo(30);
         }
 
         @Test
@@ -454,8 +480,8 @@ class ScreentimeRulesTest {
             Instant started = at(FRIDAY, 21, 0);
             Instant closeAt = at(FRIDAY, 23, 59);
             Balance before = rules.balance(FRIDAY, plainWeek(), List.of(fun(FRIDAY, 10, 0, 60)), 0);
-            assertThat(before.remainingTodayMinutes()).isZero();
-            assertThat(rules.autoCloseMinutes(SessionType.FUN, started, closeAt, before)).isZero();
+            assertThat(before.remainingTodaySeconds()).isZero();
+            assertThat(rules.autoCloseSeconds(SessionType.FUN, started, closeAt, before)).isZero();
         }
     }
 
@@ -464,15 +490,19 @@ class ScreentimeRulesTest {
     }
 
     private static Booking fun(LocalDate day, int hour, int minute, int minutes) {
-        return new Booking(SessionType.FUN, at(day, hour, minute), minutes);
+        return new Booking(SessionType.FUN, at(day, hour, minute), minutes(minutes));
     }
 
     private static Booking quick(LocalDate day, int hour, int minute, int minutes) {
-        return new Booking(SessionType.QUICK, at(day, hour, minute), minutes);
+        return new Booking(SessionType.QUICK, at(day, hour, minute), minutes(minutes));
     }
 
     private static Booking film(LocalDate day, int hour, int minute, int minutes) {
-        return new Booking(SessionType.FILM, at(day, hour, minute), minutes);
+        return new Booking(SessionType.FILM, at(day, hour, minute), minutes(minutes));
+    }
+
+    private static int minutes(int minutes) {
+        return minutes * 60;
     }
 
     private static Instant at(LocalDate day, int hour, int minute) {

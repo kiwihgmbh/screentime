@@ -1,180 +1,272 @@
-import { Component, inject, signal } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { MatButtonModule } from '@angular/material/button';
+import { Component, computed, inject, signal } from '@angular/core';
 import { MatCardModule } from '@angular/material/card';
-import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIconModule } from '@angular/material/icon';
-import { MatInputModule } from '@angular/material/input';
-import { MatSnackBar } from '@angular/material/snack-bar';
 import { ApiService, errorMessage } from '../../core/api.service';
-import { SETTING_KEYS, Settings } from '../../core/models';
+import { EffectiveSettings, SettingChange, SettingsOverview } from '../../core/models';
+import { MinutesPipe } from '../../core/minutes.pipe';
+import { SETTING_LABELS, THRESHOLD_KEY, VALUE_KEYS } from '../../core/settings-rules';
+import { describeWeek } from '../../core/week-summary';
+import { HolidayPeriodsComponent } from './holiday-periods';
+import { ValueSetEditorComponent } from './value-set-editor';
 
 /**
- * Every number the rules run on. They are rows in a table, so changing one
- * here changes the account on the next request, with no deployment.
+ * Every number the rules run on, twice: once for term time and once for the
+ * holidays, plus the school holidays themselves.
  *
- * The server validates the whole set together and refuses a change that would
- * leave the daily ceilings at or below the weekly budget; its message names
- * both numbers and is shown here as it is.
+ * Above everything, one sentence says what the current week runs on and why,
+ * because that is the question a parent opens this page with. At the bottom,
+ * the change log: who changed what, when, and from which value to which.
  */
 @Component({
   selector: 'app-settings',
-  imports: [
-    FormsModule,
-    MatCardModule,
-    MatButtonModule,
-    MatIconModule,
-    MatFormFieldModule,
-    MatInputModule,
-  ],
+  imports: [MatCardModule, MatIconModule, HolidayPeriodsComponent, ValueSetEditorComponent],
   styles: `
-    .grid {
-      display: grid;
-      gap: 4px;
+    .stack {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
     }
-    .field {
-      display: grid;
-      grid-template-columns: 1fr 110px;
-      gap: 12px;
-      align-items: center;
+    .summary {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      font-size: 1rem;
+      line-height: 1.45;
     }
-    .label .name {
-      font-weight: 500;
-    }
-    .label .hint {
-      font-size: 0.78rem;
-      color: var(--mat-sys-on-surface-variant);
-    }
-    .wide {
-      width: 100%;
-    }
-    .error {
-      color: var(--mat-sys-error);
+    .summary mat-icon {
+      /* a long sentence beside it would otherwise squeeze the icon */
+      flex: 0 0 auto;
     }
     .aside {
       font-size: 0.85rem;
       color: var(--mat-sys-on-surface-variant);
+      margin: 0 0 8px;
+    }
+    .log {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+    .log li {
+      padding: 8px 0;
+      border-bottom: 1px solid var(--mat-sys-outline-variant);
+    }
+    .log li:last-child {
+      border-bottom: none;
+    }
+    .log .meta {
+      font-size: 0.78rem;
+      color: var(--mat-sys-on-surface-variant);
+    }
+    .failure {
+      color: var(--mat-sys-error);
+    }
+    h4 {
+      margin: 16px 0 4px;
+      font-weight: 500;
     }
   `,
   template: `
     <h2 i18n>Settings</h2>
-    <mat-card
-      ><mat-card-content>
-        <div class="grid">
-          @for (key of keys; track key) {
-            <div class="field">
-              <div class="label">
-                <div class="name">{{ label(key) }}</div>
-                <div class="hint">{{ hint(key) }}</div>
+    @if (failure(); as message) {
+      <p class="failure">{{ message }}</p>
+    }
+    @if (overview(); as o) {
+      <div class="stack">
+        @if (summary(); as text) {
+          <mat-card
+            ><mat-card-content>
+              <div class="summary" data-testid="week-summary">
+                <mat-icon>{{
+                  effective()?.scope === 'HOLIDAY' ? 'beach_access' : 'school'
+                }}</mat-icon>
+                <span>{{ text }}</span>
               </div>
-              <mat-form-field appearance="outline">
-                <input
-                  matInput
-                  type="number"
-                  [ngModel]="draft()[key] ?? ''"
-                  (ngModelChange)="set(key, $event)"
-                  [name]="key"
-                />
-              </mat-form-field>
-            </div>
-          }
-        </div>
-
-        @if (failure(); as message) {
-          <p class="error">{{ message }}</p>
+            </mat-card-content></mat-card
+          >
         }
-        <p class="aside" i18n>
-          The daily ceilings have to add up to more than the weekly budget. If they do not, the
-          weekly budget never binds and only the daily ceilings do any work.
-        </p>
-        <button matButton="filled" class="wide" (click)="save()" [disabled]="busy()">
-          <mat-icon>save</mat-icon>
-          <span i18n>Save</span>
-        </button>
-      </mat-card-content></mat-card
-    >
+
+        <mat-card
+          ><mat-card-content>
+            <h3 i18n>Term values</h3>
+            <p class="aside" i18n>For school weeks.</p>
+            <app-value-set-editor
+              scope="TERM"
+              title="term values"
+              i18n-title
+              [keys]="valueKeys"
+              [thisWeek]="o.term.thisWeek"
+              [nextWeek]="o.term.nextWeek"
+              [thisMonday]="o.thisWeek"
+              [nextMonday]="o.nextWeek"
+              (saved)="applied($event)"
+            /> </mat-card-content
+        ></mat-card>
+
+        <mat-card
+          ><mat-card-content>
+            <h3 i18n>Holiday values</h3>
+            <p class="aside" i18n>
+              For a week with {{ o.general.thisWeek[thresholdKey] }} or more holiday days. In other
+              weeks, a holiday day still gets the holiday ceiling.
+            </p>
+            <app-value-set-editor
+              scope="HOLIDAY"
+              title="holiday values"
+              i18n-title
+              [keys]="valueKeys"
+              [thisWeek]="o.holiday.thisWeek"
+              [nextWeek]="o.holiday.nextWeek"
+              [thisMonday]="o.thisWeek"
+              [nextMonday]="o.nextWeek"
+              (saved)="applied($event)"
+            /> </mat-card-content
+        ></mat-card>
+
+        <mat-card
+          ><mat-card-content>
+            <h3 i18n>Holiday periods</h3>
+            <p class="aside" i18n>
+              The school holidays, first and last day included. Nothing is filled in for you.
+            </p>
+            @if (effective(); as current) {
+              <app-holiday-periods
+                [current]="current"
+                [holidayValues]="o.holiday.thisWeek"
+                (changed)="reload()"
+              />
+            }
+            <h4 i18n>When a week counts as holiday</h4>
+            <app-value-set-editor
+              scope="GLOBAL"
+              title="the threshold"
+              i18n-title
+              [keys]="thresholdKeys"
+              [thisWeek]="o.general.thisWeek"
+              [nextWeek]="o.general.nextWeek"
+              [thisMonday]="o.thisWeek"
+              [nextMonday]="o.nextWeek"
+              (saved)="applied($event)"
+            /> </mat-card-content
+        ></mat-card>
+
+        <mat-card
+          ><mat-card-content>
+            <h3 i18n>Changes</h3>
+            @if (o.changes.length === 0) {
+              <p class="aside" i18n>Nothing has been changed yet. These are the defaults.</p>
+            } @else {
+              <ul class="log">
+                @for (change of o.changes; track $index) {
+                  <li>
+                    <div>{{ describe(change) }}</div>
+                    <div class="meta">{{ when(change.at) }} · {{ change.by ?? '–' }}</div>
+                  </li>
+                }
+              </ul>
+            }
+          </mat-card-content></mat-card
+        >
+      </div>
+    }
   `,
 })
 export class SettingsComponent {
   private readonly api = inject(ApiService);
-  private readonly snackBar = inject(MatSnackBar);
+  private readonly minutes = new MinutesPipe();
 
-  protected readonly keys = SETTING_KEYS;
-  protected readonly draft = signal<Settings>({});
-  protected readonly busy = signal(false);
+  protected readonly valueKeys = VALUE_KEYS;
+  protected readonly thresholdKeys = [THRESHOLD_KEY] as const;
+  protected readonly thresholdKey = THRESHOLD_KEY;
+
+  protected readonly overview = signal<SettingsOverview | null>(null);
+  protected readonly effective = signal<EffectiveSettings | null>(null);
   protected readonly failure = signal<string | null>(null);
 
+  protected readonly summary = computed(() => {
+    const week = this.effective();
+    return week ? describeWeek(week) : null;
+  });
+
   constructor() {
-    void this.load();
+    void this.reload();
   }
 
-  private async load(): Promise<void> {
+  protected async reload(): Promise<void> {
     try {
-      this.draft.set({ ...(await this.api.settings()) });
+      const [overview, effective] = await Promise.all([
+        this.api.settings(),
+        this.api.effectiveSettings(),
+      ]);
+      this.overview.set(overview);
+      this.effective.set(effective);
+      this.failure.set(null);
     } catch (error) {
       this.failure.set(errorMessage(error));
     }
   }
 
-  protected set(key: string, value: string): void {
-    this.draft.update((current) => ({ ...current, [key]: String(value) }));
-  }
-
-  protected async save(): Promise<void> {
-    this.busy.set(true);
-    this.failure.set(null);
+  /** A save answers with the new overview; the sentence for this week may have changed with it. */
+  protected async applied(overview: SettingsOverview): Promise<void> {
+    this.overview.set(overview);
     try {
-      this.draft.set({ ...(await this.api.saveSettings(this.draft())) });
-      this.snackBar.open($localize`Saved.`, undefined, { duration: 3000 });
+      this.effective.set(await this.api.effectiveSettings());
     } catch (error) {
-      // the server's message names the numbers that do not add up
       this.failure.set(errorMessage(error));
-      await this.load();
-    } finally {
-      this.busy.set(false);
     }
   }
 
-  protected label(key: string): string {
-    return LABELS[key]?.name ?? key;
+  /** One line of the change log, in words. */
+  protected describe(change: SettingChange): string {
+    if (change.kind === 'HOLIDAY_PERIOD') {
+      switch (change.action) {
+        case 'CREATE':
+          return $localize`Holiday period added: ${change.to}`;
+        case 'DELETE':
+          return $localize`Holiday period removed: ${change.from}`;
+        default:
+          return $localize`Holiday period changed: ${change.from} → ${change.to}`;
+      }
+    }
+    const key = change.key ?? '';
+    const name = SETTING_LABELS[key]?.name ?? key;
+    const set =
+      change.scope === 'HOLIDAY'
+        ? $localize`Holiday`
+        : change.scope === 'GLOBAL'
+          ? $localize`General`
+          : $localize`Term`;
+    const from = change.from === undefined ? '–' : this.value(key, change.from);
+    const to = change.to === undefined ? '–' : this.value(key, change.to);
+    const since = change.validFrom ? this.day(change.validFrom) : '';
+    return $localize`${set}\: ${name} ${from} → ${to}, from ${since}`;
   }
 
-  protected hint(key: string): string {
-    return LABELS[key]?.hint ?? '';
+  private value(key: string, raw: string): string {
+    if (key === 'cutoffHour') {
+      return `${raw}:00`;
+    }
+    if (key === THRESHOLD_KEY) {
+      return $localize`${raw} days`;
+    }
+    const n = Number(raw);
+    return Number.isNaN(n) ? raw : this.minutes.transform(n);
+  }
+
+  private day(date: string): string {
+    return new Date(date + 'T00:00:00').toLocaleDateString(undefined, {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+    });
+  }
+
+  protected when(instant: string): string {
+    return new Date(instant).toLocaleString(undefined, {
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   }
 }
-
-const LABELS: Record<string, { name: string; hint: string }> = {
-  weeklyMinutes: { name: $localize`Weekly budget`, hint: $localize`Minutes, Monday to Sunday` },
-  weekdayCapMinutes: { name: $localize`School day ceiling`, hint: $localize`Monday to Friday` },
-  weekendCapMinutes: { name: $localize`Weekend ceiling`, hint: $localize`Saturday and Sunday` },
-  quickDailyMinutes: {
-    name: $localize`Looking things up`,
-    hint: $localize`Per day, outside the weekly budget`,
-  },
-  cutoffHour: {
-    name: $localize`Evening cut off`,
-    hint: $localize`Nothing starts at or after this hour`,
-  },
-  bonusMinutes: { name: $localize`Bonus`, hint: $localize`Added to the week after a clean week` },
-  bonusWeekendCapMinutes: {
-    name: $localize`Weekend ceiling with bonus`,
-    hint: $localize`So the extra time can be used`,
-  },
-  maxPenaltyMinutes: {
-    name: $localize`Largest deduction`,
-    hint: $localize`What one check can cost at most`,
-  },
-  toleranceMinutes: {
-    name: $localize`Tolerance`,
-    hint: $localize`A difference this small still counts as a match`,
-  },
-  manualMaxMinutes: {
-    name: $localize`Largest single entry`,
-    hint: $localize`What a child may book at once`,
-  },
-  deliberatePenaltyMinutes: {
-    name: $localize`Working around the rules`,
-    hint: $localize`Added before the cap`,
-  },
-};

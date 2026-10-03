@@ -45,9 +45,35 @@ class SessionApiTest extends ApiTestBase {
             time.advanceMinutes(25);
             JsonNode stopped = readBody(asChild(post("/api/sessions/stop")).andExpect(status().isOk()));
 
-            assertThat(stopped.get("minutes").asInt()).isEqualTo(25);
+            assertThat(stopped.get("seconds").asInt()).isEqualTo(25 * 60);
             assertThat(stopped.get("running").asBoolean()).isFalse();
             assertThat(stopped.get("autoClosed").asBoolean()).isFalse();
+        }
+
+        @Test
+        void aSessionShorterThanAMinuteCostsItsSeconds() throws Exception {
+            asChild(post("/api/sessions/start"), Map.of("deviceId", deviceId("iPad"), "type", "FUN"))
+                    .andExpect(status().isCreated());
+
+            time.advanceSeconds(40);
+            JsonNode stopped = readBody(asChild(post("/api/sessions/stop")).andExpect(status().isOk()));
+
+            assertThat(stopped.get("seconds").asInt()).isEqualTo(40);
+            assertThat(currentAsChild().get("balance").get("remainingTodaySeconds").asInt())
+                    .as("40 seconds used to round down to nothing")
+                    .isEqualTo(60 * 60 - 40);
+        }
+
+        @Test
+        void aRunningSessionReportsItsSecondsSoFar() throws Exception {
+            asChild(post("/api/sessions/start"), Map.of("deviceId", deviceId("iPad"), "type", "FUN"));
+            time.advanceSeconds(95);
+
+            JsonNode current = currentAsChild();
+            assertThat(current.get("openSession").get("elapsedSeconds").asInt()).isEqualTo(95);
+            assertThat(current.get("openSession").get("countdownAgainstSeconds").asInt())
+                    .as("available now without the running session; the browser takes the elapsed time off")
+                    .isEqualTo(60 * 60);
         }
 
         @Test
@@ -56,11 +82,11 @@ class SessionApiTest extends ApiTestBase {
             time.advanceMinutes(20);
 
             JsonNode current = currentAsChild();
-            assertThat(current.get("openSession").get("elapsedMinutes").asInt()).isEqualTo(20);
-            assertThat(current.get("balance").get("dayUsedMinutes").asInt())
+            assertThat(current.get("openSession").get("elapsedSeconds").asInt()).isEqualTo(20 * 60);
+            assertThat(current.get("balance").get("dayUsedSeconds").asInt())
                     .as("the countdown has to be honest while the timer runs")
-                    .isEqualTo(20);
-            assertThat(current.get("balance").get("remainingTodayMinutes").asInt()).isEqualTo(40);
+                    .isEqualTo(20 * 60);
+            assertThat(current.get("balance").get("remainingTodaySeconds").asInt()).isEqualTo(40 * 60);
         }
     }
 
@@ -144,7 +170,7 @@ class SessionApiTest extends ApiTestBase {
                     "minutes", 30, "deviceId", deviceId("iPad"), "type", "FUN"))
                     .andExpect(status().isCreated()));
             assertThat(booked.get("day").asText()).isEqualTo(FRIDAY.toString());
-            assertThat(booked.get("minutes").asInt()).isEqualTo(30);
+            assertThat(booked.get("seconds").asInt()).isEqualTo(30 * 60);
             assertThat(booked.get("source").asText()).isEqualTo("MANUAL");
         }
 
@@ -209,9 +235,9 @@ class SessionApiTest extends ApiTestBase {
                     "minutes", 45, "deviceId", deviceId("iMac"), "type", "FUN"))
                     .andExpect(status().isCreated());
 
-            assertThat(currentAsChild().get("balance").get("weekUsedMinutes").asInt())
+            assertThat(currentAsChild().get("balance").get("weekUsedSeconds").asInt())
                     .as("a parent has no screen time of their own to account for")
-                    .isEqualTo(45);
+                    .isEqualTo(45 * 60);
         }
 
         @Test
@@ -233,10 +259,10 @@ class SessionApiTest extends ApiTestBase {
                     .andExpect(status().isCreated());
 
             JsonNode balance = currentAsChild().get("balance");
-            assertThat(balance.get("weekUsedMinutes").asInt()).isZero();
-            assertThat(balance.get("remainingWeekMinutes").asInt()).isEqualTo(480);
-            assertThat(balance.get("quickUsedMinutes").asInt()).isEqualTo(10);
-            assertThat(balance.get("remainingQuickMinutes").asInt()).isEqualTo(5);
+            assertThat(balance.get("weekUsedSeconds").asInt()).isZero();
+            assertThat(balance.get("remainingWeekSeconds").asInt()).isEqualTo(480 * 60);
+            assertThat(balance.get("quickUsedSeconds").asInt()).isEqualTo(10 * 60);
+            assertThat(balance.get("remainingQuickSeconds").asInt()).isEqualTo(5 * 60);
         }
 
         @Test
@@ -247,9 +273,9 @@ class SessionApiTest extends ApiTestBase {
                     .andExpect(status().isCreated());
 
             JsonNode balance = currentAsChild().get("balance");
-            assertThat(balance.get("weekUsedMinutes").asInt()).isZero();
-            assertThat(balance.get("dayUsedMinutes").asInt()).isZero();
-            assertThat(balance.get("quickUsedMinutes").asInt()).isZero();
+            assertThat(balance.get("weekUsedSeconds").asInt()).isZero();
+            assertThat(balance.get("dayUsedSeconds").asInt()).isZero();
+            assertThat(balance.get("quickUsedSeconds").asInt()).isZero();
         }
 
         @Test
@@ -260,8 +286,8 @@ class SessionApiTest extends ApiTestBase {
             assertThat(week.get(0).get("date").asText()).isEqualTo(MONDAY.toString());
             assertThat(week.get(6).get("date").asText()).isEqualTo(SUNDAY.toString());
             assertThat(week.get(4).get("today").asBoolean()).as("Friday is today").isTrue();
-            assertThat(week.get(4).get("capMinutes").asInt()).isEqualTo(60);
-            assertThat(week.get(5).get("capMinutes").asInt()).as("Saturday").isEqualTo(120);
+            assertThat(week.get(4).get("capSeconds").asInt()).isEqualTo(60 * 60);
+            assertThat(week.get(5).get("capSeconds").asInt()).as("Saturday").isEqualTo(120 * 60);
             assertThat(week.get(5).get("future").asBoolean()).isTrue();
         }
 
@@ -275,25 +301,49 @@ class SessionApiTest extends ApiTestBase {
 
             JsonNode current = currentAsChild();
             JsonNode balance = current.get("balance");
-            assertThat(balance.get("weeklyBudgetMinutes").asInt()).isEqualTo(480);
-            assertThat(balance.get("adjustmentMinutes").asInt()).isEqualTo(-30);
-            assertThat(balance.get("weekUsedMinutes").asInt()).isEqualTo(20);
-            assertThat(balance.get("remainingWeekMinutes").asInt()).isEqualTo(430);
+            assertThat(balance.get("weeklyBudgetSeconds").asInt()).isEqualTo(480 * 60);
+            assertThat(balance.get("adjustmentSeconds").asInt()).isEqualTo(-30 * 60);
+            assertThat(balance.get("weekUsedSeconds").asInt()).isEqualTo(20 * 60);
+            assertThat(balance.get("remainingWeekSeconds").asInt()).isEqualTo(430 * 60);
             assertThat(current.get("weekAdjustments").get(0).get("reason").asText())
                     .as("a number that drops must come with a reason the child can read")
                     .isEqualTo("bike left outside");
         }
 
         @Test
-        void aHolidayWeekRaisesTheWeekdayCeiling() throws Exception {
-            asParent(put("/api/weeks/" + MONDAY + "/holiday"), Map.of("holiday", true))
-                    .andExpect(status().isOk());
+        void aWeekInTheHolidaysGetsTheHolidayValues() throws Exception {
+            holiday("Autumn holidays", MONDAY.minusDays(2), SUNDAY.plusDays(7));
 
             JsonNode current = currentAsChild();
             assertThat(current.get("holidayWeek").asBoolean()).isTrue();
-            assertThat(current.get("balance").get("dailyCapMinutes").asInt())
-                    .as("Friday of a holiday week gets the weekend ceiling")
-                    .isEqualTo(120);
+            assertThat(current.get("balance").get("weeklyBudgetSeconds").asInt()).isEqualTo(720 * 60);
+            assertThat(current.get("balance").get("dailyCapSeconds").asInt())
+                    .as("Friday in the holidays gets the holiday weekday ceiling")
+                    .isEqualTo(120 * 60);
+            assertThat(current.get("cutoffHour").asInt()).isEqualTo(21);
+        }
+
+        @Test
+        void holidaysFromSaturdayLeaveTheWeekOnTermValues() throws Exception {
+            holiday("Autumn holidays", SATURDAY, SATURDAY.plusDays(15));
+            // written by the test parent, so the reset removes it again
+            jdbc.update("""
+                    insert into settings (scope, key, value, valid_from, created_by)
+                    values ('HOLIDAY', 'weekendCapMinutes', '140', date '2000-01-03',
+                            (select id from users where username = ?))
+                    """, PARENT_USERNAME);
+
+            JsonNode current = currentAsChild();
+            assertThat(current.get("holidayWeek").asBoolean())
+                    .as("two holiday days of seven")
+                    .isFalse();
+            assertThat(current.get("balance").get("weeklyBudgetSeconds").asInt()).isEqualTo(480 * 60);
+            assertThat(current.get("balance").get("dailyCapSeconds").asInt())
+                    .as("Friday is still a school day")
+                    .isEqualTo(60 * 60);
+            assertThat(current.get("week").get(5).get("capSeconds").asInt())
+                    .as("Saturday is a holiday day and gets the holiday weekend ceiling")
+                    .isEqualTo(140 * 60);
         }
 
         @Test
@@ -309,10 +359,10 @@ class SessionApiTest extends ApiTestBase {
                     "date", MONDAY.toString()));
 
             JsonNode balance = currentAsChild().get("balance");
-            assertThat(balance.get("weekUsedMinutes").asInt()).isEqualTo(455);
-            assertThat(balance.get("remainingWeekMinutes").asInt()).isEqualTo(25);
-            assertThat(balance.get("remainingTodayMinutes").asInt()).isEqualTo(60);
-            assertThat(balance.get("availableNowMinutes").asInt()).isEqualTo(25);
+            assertThat(balance.get("weekUsedSeconds").asInt()).isEqualTo(455 * 60);
+            assertThat(balance.get("remainingWeekSeconds").asInt()).isEqualTo(25 * 60);
+            assertThat(balance.get("remainingTodaySeconds").asInt()).isEqualTo(60 * 60);
+            assertThat(balance.get("availableNowSeconds").asInt()).isEqualTo(25 * 60);
         }
     }
 
@@ -327,8 +377,19 @@ class SessionApiTest extends ApiTestBase {
 
             JsonNode corrected = readBody(asParent(put("/api/sessions/" + id), Map.of("minutes", 30))
                     .andExpect(status().isOk()));
-            assertThat(corrected.get("minutes").asInt()).isEqualTo(30);
-            assertThat(currentAsChild().get("balance").get("weekUsedMinutes").asInt()).isEqualTo(30);
+            assertThat(corrected.get("seconds").asInt()).isEqualTo(30 * 60);
+            assertThat(currentAsChild().get("balance").get("weekUsedSeconds").asInt()).isEqualTo(30 * 60);
+        }
+
+        @Test
+        void aCorrectionThatDoesNotTouchTheDurationKeepsItsSeconds() throws Exception {
+            asChild(post("/api/sessions/start"), Map.of("deviceId", deviceId("iPad"), "type", "FUN"));
+            time.advanceSeconds(12 * 60 + 30);
+            Long id = readBody(asChild(post("/api/sessions/stop"))).get("id").asLong();
+
+            JsonNode corrected = readBody(asParent(put("/api/sessions/" + id),
+                    Map.of("deviceId", deviceId("iMac"))).andExpect(status().isOk()));
+            assertThat(corrected.get("seconds").asInt()).isEqualTo(12 * 60 + 30);
         }
 
         @Test
@@ -339,7 +400,7 @@ class SessionApiTest extends ApiTestBase {
             JsonNode moved = readBody(asParent(put("/api/sessions/" + id),
                     Map.of("date", MONDAY.toString())).andExpect(status().isOk()));
             assertThat(moved.get("day").asText()).isEqualTo(MONDAY.toString());
-            assertThat(currentAsChild().get("balance").get("dayUsedMinutes").asInt())
+            assertThat(currentAsChild().get("balance").get("dayUsedSeconds").asInt())
                     .as("the minutes left Friday with the entry")
                     .isZero();
         }
@@ -359,7 +420,7 @@ class SessionApiTest extends ApiTestBase {
                     "minutes", 40, "deviceId", deviceId("iPad"), "type", "FUN"))).get("id").asLong();
 
             asParent(delete("/api/sessions/" + id)).andExpect(status().isNoContent());
-            assertThat(currentAsChild().get("balance").get("weekUsedMinutes").asInt()).isZero();
+            assertThat(currentAsChild().get("balance").get("weekUsedSeconds").asInt()).isZero();
         }
 
         @Test
@@ -401,8 +462,8 @@ class SessionApiTest extends ApiTestBase {
                     select old_value, new_value, user_id from audit_log
                     where entity = 'SESSION' and entity_id = ? and action = 'UPDATE'
                     """, id);
-            assertThat((String) row.get("old_value")).contains("\"minutes\":120");
-            assertThat((String) row.get("new_value")).contains("\"minutes\":30");
+            assertThat((String) row.get("old_value")).contains("\"seconds\":7200");
+            assertThat((String) row.get("new_value")).contains("\"seconds\":1800");
             assertThat(row.get("user_id")).isEqualTo(
                     jdbc.queryForObject("select id from users where username = ?", Long.class, PARENT_USERNAME));
         }
@@ -417,7 +478,7 @@ class SessionApiTest extends ApiTestBase {
                     select old_value from audit_log
                     where entity = 'SESSION' and entity_id = ? and action = 'DELETE'
                     """, String.class, id);
-            assertThat(old).contains("\"minutes\":40");
+            assertThat(old).contains("\"seconds\":2400");
         }
 
         @Test
@@ -433,5 +494,9 @@ class SessionApiTest extends ApiTestBase {
                     select action from audit_log where entity = ? and entity_id = ? order by id
                     """, String.class, entity, id);
         }
+    }
+
+    private void holiday(String name, java.time.LocalDate from, java.time.LocalDate to) {
+        jdbc.update("insert into holiday_periods (name, start_date, end_date) values (?, ?, ?)", name, from, to);
     }
 }

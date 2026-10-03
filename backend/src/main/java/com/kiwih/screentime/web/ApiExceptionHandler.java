@@ -1,5 +1,8 @@
 package com.kiwih.screentime.web;
 
+import com.kiwih.screentime.rules.Holiday;
+import com.kiwih.screentime.rules.HolidayOverlapException;
+import com.kiwih.screentime.rules.InvalidSettingsException;
 import com.kiwih.screentime.rules.RuleViolation;
 import com.kiwih.screentime.service.AccountResolver;
 import com.kiwih.screentime.service.NotFoundException;
@@ -40,12 +43,23 @@ public class ApiExceptionHandler {
     public ResponseEntity<ApiError> onRuleViolation(RuleViolation e) {
         HttpStatus status = switch (e.kind()) {
             case NOT_ALLOWED -> HttpStatus.FORBIDDEN;
-            case SESSION_ALREADY_OPEN -> HttpStatus.CONFLICT;
+            case SESSION_ALREADY_OPEN, CONFLICT -> HttpStatus.CONFLICT;
             case INVALID -> HttpStatus.BAD_REQUEST;
         };
         Map<String, Object> details = new LinkedHashMap<>();
         if (e.openSessionId() != null) {
             details.put("openSessionId", e.openSessionId());
+        }
+        if (e instanceof HolidayOverlapException overlap) {
+            Holiday other = overlap.conflicting();
+            details.put("conflictingPeriod", Map.of(
+                    "id", other.id(), "name", other.name(),
+                    "startDate", other.start().toString(), "endDate", other.end().toString()));
+        }
+        if (e instanceof InvalidSettingsException invalid) {
+            // one entry per broken rule, with the fields it concerns, so the
+            // settings form can show each message under the right field
+            details.put("problems", invalid.problems());
         }
         return body(status, e.getMessage(), details);
     }

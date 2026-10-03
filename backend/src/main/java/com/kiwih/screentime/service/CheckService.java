@@ -5,6 +5,7 @@ import com.kiwih.screentime.repo.AdjustmentRepository;
 import com.kiwih.screentime.repo.DeviceRepository;
 import com.kiwih.screentime.repo.WeeklyCheckRepository;
 import com.kiwih.screentime.rules.CheckOutcome;
+import com.kiwih.screentime.rules.Durations;
 import com.kiwih.screentime.rules.RuleViolation;
 import com.kiwih.screentime.rules.ScreentimeRules;
 import com.kiwih.screentime.security.AppPrincipal;
@@ -63,22 +64,29 @@ public class CheckService {
     @Transactional
     public Result save(AppPrincipal caller, LocalDate requestedWeekStart,
                        List<ReportedDevice> reported, boolean deliberate) {
-        ScreentimeRules rules = settingsService.rules();
-        LocalDate weekStart = rules.calendar().weekStartOf(requestedWeekStart);
+        LocalDate weekStart = settingsService.calendar().weekStartOf(requestedWeekStart);
+        // the checked week is compared with the values that applied to it
+        ScreentimeRules rules = settingsService.rulesFor(weekStart);
         User account = accounts.resolve(caller);
 
         validateReported(reported);
 
-        int logged = balances.loggedFunMinutes(account.getId(), weekStart, rules.calendar());
+        int logged = Durations.nearestMinute(
+                balances.loggedFunSeconds(account.getId(), weekStart, rules.calendar()));
         int reportedTotal = reported.stream().mapToInt(ReportedDevice::getMinutes).sum();
         CheckOutcome outcome = rules.weeklyCheck(logged, reportedTotal, deliberate);
         LocalDate followingWeek = rules.followingWeek(weekStart);
 
         replacePreviousCheck(weekStart, caller.userId());
 
+        // the budget and the tolerance it was computed against are kept with
+        // the check, so it still reads right if somebody edits the past later
         WeeklyCheck check = checks.save(new WeeklyCheck(
                 weekStart, logged, reportedTotal, outcome.difference(), outcome.penaltyMinutes(),
-                outcome.clean(), deliberate, caller.userId(), clock.instant(), reported));
+                outcome.clean(), deliberate,
+                rules.weeklyBudgetMinutes(weeks.state(weekStart)), rules.settings().toleranceMinutes(),
+                rules.week().scope().name(),
+                caller.userId(), clock.instant(), reported));
         audit.created(AuditService.WEEKLY_CHECK, check.getId(), Map.of(
                 "weekStart", weekStart.toString(),
                 "logged", logged,

@@ -18,6 +18,37 @@ class WeeklyCheckApiTest extends ApiTestBase {
     private static final LocalDate NEXT_WEEK = LocalDate.of(2026, 10, 5);
 
     @Test
+    void theLogIsComparedToTheNearestMinute() throws Exception {
+        // 300 minutes by hand and a 40 second timer: 300 min 40 s, which the
+        // devices would report as 301
+        book(300, MONDAY);
+        asChild(post("/api/sessions/start"), Map.of("deviceId", deviceId("iPad"), "type", "FUN"))
+                .andExpect(status().isCreated());
+        time.advanceSeconds(40);
+        asChild(post("/api/sessions/stop")).andExpect(status().isOk());
+
+        JsonNode response = check(301, false);
+
+        assertThat(response.get("check").get("loggedMinutes").asInt()).isEqualTo(301);
+        assertThat(response.get("check").get("differenceMinutes").asInt()).isZero();
+    }
+
+    @Test
+    void aCheckKeepsTheBudgetItWasComputedAgainst() throws Exception {
+        book(300, MONDAY);
+        JsonNode response = check(300, false);
+        assertThat(response.get("check").get("budgetMinutes").asInt()).isEqualTo(480);
+        assertThat(response.get("check").get("toleranceMinutes").asInt()).isEqualTo(10);
+        assertThat(response.get("check").get("settingsScope").asText()).isEqualTo("TERM");
+
+        // a later change to this week's values does not rewrite the check
+        asParent(put("/api/settings"), Map.of("scope", "TERM", "values", Map.of("weeklyMinutes", "420")))
+                .andExpect(status().isOk());
+        JsonNode week = readBody(asParent(get("/api/account/week").param("start", MONDAY.toString())));
+        assertThat(week.get("check").get("budgetMinutes").asInt()).isEqualTo(480);
+    }
+
+    @Test
     void aCleanWeekSetsTheBonusForTheFollowingWeek() throws Exception {
         book(200, MONDAY);
         book(100, FRIDAY);
@@ -47,10 +78,10 @@ class WeeklyCheckApiTest extends ApiTestBase {
         JsonNode current = currentAsChild();
 
         assertThat(current.get("bonusActive").asBoolean()).isTrue();
-        assertThat(current.get("balance").get("weeklyBudgetMinutes").asInt()).isEqualTo(540);
-        assertThat(current.get("balance").get("dailyCapMinutes").asInt())
+        assertThat(current.get("balance").get("weeklyBudgetSeconds").asInt()).isEqualTo(540 * 60);
+        assertThat(current.get("balance").get("dailyCapSeconds").asInt())
                 .as("the extra hour needs a higher weekend ceiling to be usable")
-                .isEqualTo(150);
+                .isEqualTo(150 * 60);
     }
 
     @Test
@@ -80,9 +111,9 @@ class WeeklyCheckApiTest extends ApiTestBase {
 
         time.setLocal(NEXT_WEEK, 10, 0);
         JsonNode balance = currentAsChild().get("balance");
-        assertThat(balance.get("weeklyBudgetMinutes").asInt()).isEqualTo(480);
-        assertThat(balance.get("adjustmentMinutes").asInt()).isEqualTo(-100);
-        assertThat(balance.get("remainingWeekMinutes").asInt()).isEqualTo(380);
+        assertThat(balance.get("weeklyBudgetSeconds").asInt()).isEqualTo(480 * 60);
+        assertThat(balance.get("adjustmentSeconds").asInt()).isEqualTo(-100 * 60);
+        assertThat(balance.get("remainingWeekSeconds").asInt()).isEqualTo(380 * 60);
     }
 
     @Test
@@ -242,7 +273,7 @@ class WeeklyCheckApiTest extends ApiTestBase {
         assertThat(history).hasSize(2);
         assertThat(history.get(0).get("weekStart").asText()).isEqualTo(MONDAY.toString());
         assertThat(history.get(0).get("check").get("penaltyMinutes").asInt()).isEqualTo(100);
-        assertThat(history.get(0).get("usedMinutes").asInt()).isEqualTo(200);
+        assertThat(history.get(0).get("usedSeconds").asInt()).isEqualTo(200 * 60);
     }
 
     // ------------------------------------------------------------------ helpers

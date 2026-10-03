@@ -9,8 +9,9 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSelectModule } from '@angular/material/select';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { ApiService, errorMessage } from '../../core/api.service';
-import { Account, SessionType } from '../../core/models';
-import { CountdownPipe, MinutesPipe } from '../../core/minutes.pipe';
+import { Account, EffectiveSettings, SessionType } from '../../core/models';
+import { CountdownPipe, DurationPipe, MinutesPipe } from '../../core/minutes.pipe';
+import { weekReason } from '../../core/week-summary';
 import { DayStripComponent } from '../../shared/day-strip';
 import { SessionListComponent } from '../../shared/session-list';
 
@@ -34,6 +35,7 @@ import { SessionListComponent } from '../../shared/session-list';
     MatInputModule,
     MatProgressSpinnerModule,
     MinutesPipe,
+    DurationPipe,
     CountdownPipe,
     DayStripComponent,
     SessionListComponent,
@@ -180,10 +182,10 @@ import { SessionListComponent } from '../../shared/session-list';
         <!-- the number the week is spent against -->
         <div class="headline">
           <div class="label" i18n>Left this week</div>
-          <div class="value" [class.none]="a.balance.remainingWeekMinutes === 0">
-            {{ a.balance.remainingWeekMinutes | minutes }}
+          <div class="value" [class.none]="a.balance.remainingWeekSeconds === 0">
+            {{ a.balance.remainingWeekSeconds | duration }}
           </div>
-          <div class="of" i18n>of {{ a.balance.weeklyBudgetMinutes | minutes }}</div>
+          <div class="of" i18n>of {{ a.balance.weeklyBudgetSeconds | duration }}</div>
         </div>
 
         <app-day-strip [days]="a.week" />
@@ -191,13 +193,13 @@ import { SessionListComponent } from '../../shared/session-list';
         <div class="pair">
           <mat-card class="tile"
             ><mat-card-content>
-              <div class="n">{{ a.balance.remainingTodayMinutes | minutes }}</div>
-              <div class="t" i18n>Left today, of {{ a.balance.dailyCapMinutes | minutes }}</div>
+              <div class="n">{{ a.balance.remainingTodaySeconds | duration }}</div>
+              <div class="t" i18n>Left today, of {{ a.balance.dailyCapSeconds | duration }}</div>
             </mat-card-content></mat-card
           >
           <mat-card class="tile"
             ><mat-card-content>
-              <div class="n">{{ a.balance.remainingQuickMinutes | minutes }}</div>
+              <div class="n">{{ a.balance.remainingQuickSeconds | duration }}</div>
               <div class="t" i18n>Looking things up</div>
             </mat-card-content></mat-card
           >
@@ -208,14 +210,15 @@ import { SessionListComponent } from '../../shared/session-list';
             <mat-icon>celebration</mat-icon>
             <span i18n>
               Last week matched, so this week has an extra
-              {{ a.balance.weeklyBudgetMinutes - 480 | minutes }} and a higher weekend ceiling.
+              {{ a.rules.values['bonusMinutes'] | minutes }} and a higher weekend ceiling.
             </span>
           </div>
         }
-        @if (a.holidayWeek) {
+        @if (a.rules.holidayDayCount > 0) {
+          <!-- a bigger number with no reason is how the child stops trusting the account -->
           <div class="notice">
             <mat-icon>beach_access</mat-icon>
-            <span i18n>Holiday week: every day has the weekend ceiling.</span>
+            <span>{{ reason(a.rules) }}</span>
           </div>
         }
 
@@ -310,15 +313,15 @@ import { SessionListComponent } from '../../shared/session-list';
             <div class="why">
               <dl>
                 <dt i18n>Budget</dt>
-                <dd>{{ a.balance.weeklyBudgetMinutes | minutes }}</dd>
-                @if (a.balance.adjustmentMinutes !== 0) {
+                <dd>{{ a.balance.weeklyBudgetSeconds | duration }}</dd>
+                @if (a.balance.adjustmentSeconds !== 0) {
                   <dt i18n>Corrections</dt>
-                  <dd>{{ a.balance.adjustmentMinutes | minutes }}</dd>
+                  <dd>{{ a.balance.adjustmentSeconds | duration }}</dd>
                 }
                 <dt i18n>Used</dt>
-                <dd>− {{ a.balance.weekUsedMinutes | minutes }}</dd>
+                <dd>− {{ a.balance.weekUsedSeconds | duration }}</dd>
                 <dt class="total" i18n>Left</dt>
-                <dd class="total">{{ a.balance.remainingWeekMinutes | minutes }}</dd>
+                <dd class="total">{{ a.balance.remainingWeekSeconds | duration }}</dd>
               </dl>
               @if (a.weekAdjustments.length > 0) {
                 <ul class="reason">
@@ -369,11 +372,15 @@ export class DashboardComponent implements OnDestroy {
       return 0;
     }
     const elapsedSeconds = Math.floor((this.nowMs() - new Date(open.startedAt).getTime()) / 1000);
-    return open.countdownAgainstMinutes * 60 - elapsedSeconds;
+    return open.countdownAgainstSeconds - elapsedSeconds;
   });
 
   constructor() {
     void this.reload();
+  }
+
+  protected reason(rules: EffectiveSettings): string {
+    return weekReason(rules);
   }
 
   ngOnDestroy(): void {

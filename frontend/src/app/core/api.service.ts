@@ -9,7 +9,11 @@ import {
   Device,
   Session,
   SessionType,
-  Settings,
+  EffectiveSettings,
+  HolidayPeriod,
+  HolidayPeriodInput,
+  SettingsChange,
+  SettingsOverview,
   User,
   Week,
   WeekFlags,
@@ -115,20 +119,46 @@ export class ApiService {
     return firstValueFrom(this.http.delete<void>(`/api/adjustments/${id}`));
   }
 
-  settings(): Promise<Settings> {
-    return firstValueFrom(this.http.get<Settings>('/api/settings'));
+  /** Both value sets, the threshold, their history and the change log. Parents only. */
+  settings(): Promise<SettingsOverview> {
+    return firstValueFrom(this.http.get<SettingsOverview>('/api/settings'));
   }
 
-  saveSettings(changes: Settings): Promise<Settings> {
-    return firstValueFrom(this.http.put<Settings>('/api/settings', changes));
+  saveSettings(change: SettingsChange): Promise<SettingsOverview> {
+    return firstValueFrom(this.http.put<SettingsOverview>('/api/settings', change));
+  }
+
+  /** The values in force for the week a day belongs to; this week when left out. */
+  effectiveSettings(week?: string): Promise<EffectiveSettings> {
+    const params: Record<string, string> = week ? { week } : {};
+    return firstValueFrom(this.http.get<EffectiveSettings>('/api/settings/effective', { params }));
+  }
+
+  holidays(from?: string, to?: string): Promise<HolidayPeriod[]> {
+    const params: Record<string, string> = {};
+    if (from) {
+      params['from'] = from;
+    }
+    if (to) {
+      params['to'] = to;
+    }
+    return firstValueFrom(this.http.get<HolidayPeriod[]>('/api/holidays', { params }));
+  }
+
+  createHoliday(input: HolidayPeriodInput): Promise<HolidayPeriod> {
+    return firstValueFrom(this.http.post<HolidayPeriod>('/api/holidays', input));
+  }
+
+  updateHoliday(id: number, input: HolidayPeriodInput): Promise<HolidayPeriod> {
+    return firstValueFrom(this.http.put<HolidayPeriod>(`/api/holidays/${id}`, input));
+  }
+
+  deleteHoliday(id: number): Promise<void> {
+    return firstValueFrom(this.http.delete<void>(`/api/holidays/${id}`));
   }
 
   weekFlags(weekStart: string): Promise<WeekFlags> {
     return firstValueFrom(this.http.get<WeekFlags>(`/api/weeks/${weekStart}`));
-  }
-
-  setHoliday(weekStart: string, holiday: boolean): Promise<WeekFlags> {
-    return firstValueFrom(this.http.put<WeekFlags>(`/api/weeks/${weekStart}/holiday`, { holiday }));
   }
 
   users(): Promise<User[]> {

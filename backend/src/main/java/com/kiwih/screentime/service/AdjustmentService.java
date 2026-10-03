@@ -43,7 +43,7 @@ public class AdjustmentService {
             throw new RuleViolation(RuleViolation.Kind.INVALID,
                     "An adjustment of zero minutes changes nothing.");
         }
-        LocalDate monday = settingsService.rules().calendar().weekStartOf(weekStart);
+        LocalDate monday = settingsService.calendar().weekStartOf(weekStart);
         Adjustment saved = adjustments.save(new Adjustment(
                 monday, minutes, reason.trim(), caller.userId(), clock.instant()));
         audit.created(AuditService.ADJUSTMENT, saved.getId(), snapshot(saved), caller.userId());

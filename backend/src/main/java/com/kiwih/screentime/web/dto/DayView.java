@@ -7,10 +7,10 @@ import java.time.LocalDate;
 public record DayView(
         LocalDate date,
         DayOfWeek dayOfWeek,
-        int capMinutes,
-        int usedMinutes,
-        int remainingMinutes,
-        int quickUsedMinutes,
+        int capSeconds,
+        int usedSeconds,
+        int remainingSeconds,
+        int quickUsedSeconds,
         boolean today,
         boolean future) {
 }

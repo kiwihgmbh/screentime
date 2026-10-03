@@ -3,7 +3,6 @@ package com.kiwih.screentime.service;
 import com.kiwih.screentime.domain.WeekFlag;
 import com.kiwih.screentime.repo.WeekFlagRepository;
 import com.kiwih.screentime.rules.WeekState;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -11,8 +10,8 @@ import java.time.LocalDate;
 import java.util.Map;
 
 /**
- * The per week switches. A week with no row is a plain week, so nothing has to
- * be created in advance.
+ * The per week bonus switch. A week with no row is a plain week, so nothing has
+ * to be created in advance. Holidays are periods, read by SettingsService.
  */
 @Service
 public class WeekService {
@@ -28,24 +27,8 @@ public class WeekService {
     @Transactional(readOnly = true)
     public WeekState state(LocalDate weekStart) {
         return weekFlags.findById(weekStart)
-                .map(f -> new WeekState(weekStart, f.isHoliday(), f.isBonusActive()))
+                .map(f -> new WeekState(weekStart, f.isBonusActive()))
                 .orElseGet(() -> WeekState.plain(weekStart));
-    }
-
-    @PreAuthorize("hasRole('PARENT')")
-    @Transactional
-    public WeekState setHoliday(LocalDate weekStart, boolean holiday, Long byUserId) {
-        WeekFlag flag = weekFlags.findById(weekStart).orElseGet(() -> new WeekFlag(weekStart));
-        boolean before = flag.isHoliday();
-        flag.setHoliday(holiday);
-        weekFlags.save(flag);
-        if (before != holiday) {
-            audit.updated(AuditService.WEEK_FLAG, null,
-                    Map.of("weekStart", weekStart.toString(), "holiday", before),
-                    Map.of("weekStart", weekStart.toString(), "holiday", holiday),
-                    byUserId);
-        }
-        return state(weekStart);
     }
 
     /**

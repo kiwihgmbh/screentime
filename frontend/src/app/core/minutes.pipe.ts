@@ -29,6 +29,41 @@ export class MinutesPipe implements PipeTransform {
   }
 }
 
+/**
+ * Seconds of use the same way: "1 h 12 min 30 s", "40 s", "8 h".
+ *
+ * Time is counted to the second, so a 40 second session shows as 40 s and not
+ * as a "0 min" that still made the balance move. Zero parts are left out,
+ * except the minutes between hours and seconds, so "1 h 0 min 5 s" cannot be
+ * read as an hour and five minutes.
+ */
+@Pipe({ name: 'duration' })
+export class DurationPipe implements PipeTransform {
+  transform(value: number | null | undefined): string {
+    if (value === null || value === undefined || Number.isNaN(value)) {
+      return '–';
+    }
+    const negative = value < 0;
+    const total = Math.abs(Math.trunc(value));
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    const seconds = total % 60;
+
+    const parts: string[] = [];
+    if (hours > 0) {
+      parts.push(`${hours} h`);
+    }
+    if (minutes > 0 || (hours > 0 && seconds > 0)) {
+      parts.push(`${minutes} min`);
+    }
+    if (seconds > 0) {
+      parts.push(`${seconds} s`);
+    }
+    const text = parts.length === 0 ? '0 min' : parts.join(' ');
+    return negative ? `− ${text}` : text;
+  }
+}
+
 /** The same number as a clock, for a countdown: "0:09:12". */
 @Pipe({ name: 'countdown' })
 export class CountdownPipe implements PipeTransform {

@@ -91,17 +91,10 @@ public abstract class ApiTestBase extends PostgresTestBase {
         jdbc.update("delete from week_flags");
         jdbc.update("delete from audit_log");
         jdbc.update("delete from users where role = 'CHILD'");
-        jdbc.update("update settings set value = ? where key = 'weeklyMinutes'", "480");
-        jdbc.update("update settings set value = ? where key = 'weekdayCapMinutes'", "60");
-        jdbc.update("update settings set value = ? where key = 'weekendCapMinutes'", "120");
-        jdbc.update("update settings set value = ? where key = 'quickDailyMinutes'", "15");
-        jdbc.update("update settings set value = ? where key = 'cutoffHour'", "20");
-        jdbc.update("update settings set value = ? where key = 'bonusMinutes'", "60");
-        jdbc.update("update settings set value = ? where key = 'bonusWeekendCapMinutes'", "150");
-        jdbc.update("update settings set value = ? where key = 'maxPenaltyMinutes'", "120");
-        jdbc.update("update settings set value = ? where key = 'toleranceMinutes'", "10");
-        jdbc.update("update settings set value = ? where key = 'manualMaxMinutes'", "240");
-        jdbc.update("update settings set value = ? where key = 'deliberatePenaltyMinutes'", "60");
+        jdbc.update("delete from holiday_periods");
+        // settings rows are never updated; the seeded ones have no creator,
+        // so removing every row a test wrote puts the defaults back in force
+        jdbc.update("delete from settings where created_by is not null");
     }
 
     protected String login(String username, String password) throws Exception {

@@ -117,14 +117,16 @@ class AuthApiTest extends ApiTestBase {
     }
 
     @Test
-    void aChildCanReadTheSettingsButNotChangeThem() throws Exception {
+    void aChildCanReadTheValuesInForceButNotChangeThem() throws Exception {
         // the rules page shows the numbers the account actually runs on, so a
         // child that cannot read them would be shown something else
-        JsonNode settings = readBody(asChild(get("/api/settings")).andExpect(status().isOk()));
-        assertThat(settings.get("weeklyMinutes").asText()).isEqualTo("480");
-        assertThat(settings.get("cutoffHour").asText()).isEqualTo("20");
+        JsonNode effective = readBody(asChild(get("/api/settings/effective")).andExpect(status().isOk()));
+        assertThat(effective.get("values").get("weeklyMinutes").asInt()).isEqualTo(480);
+        assertThat(effective.get("values").get("cutoffHour").asInt()).isEqualTo(20);
 
-        asChild(put("/api/settings"), Map.of("weeklyMinutes", "9999"))
+        // the history and the change log are the parents'
+        asChild(get("/api/settings")).andExpect(status().isForbidden());
+        asChild(put("/api/settings"), Map.of("scope", "TERM", "values", Map.of("weeklyMinutes", "9999")))
                 .andExpect(status().isForbidden());
     }
 
@@ -138,7 +140,10 @@ class AuthApiTest extends ApiTestBase {
 
     @Test
     void aChildCannotReachAnythingThatBelongsToAParent() throws Exception {
-        asChild(put("/api/settings"), Map.of("weeklyMinutes", "9999")).andExpect(status().isForbidden());
+        asChild(put("/api/settings"), Map.of("scope", "TERM", "values", Map.of("weeklyMinutes", "9999")))
+                .andExpect(status().isForbidden());
+        asChild(post("/api/holidays"), Map.of("name", "Every day", "startDate", MONDAY.toString(),
+                "endDate", MONDAY.plusYears(1).toString())).andExpect(status().isForbidden());
         asChild(get("/api/users")).andExpect(status().isForbidden());
         asChild(post("/api/users"), Map.of("username", "x", "password", "12345678", "role", "PARENT"))
                 .andExpect(status().isForbidden());
@@ -147,8 +152,6 @@ class AuthApiTest extends ApiTestBase {
         asChild(post("/api/checks"), Map.of("weekStart", MONDAY.toString(),
                 "reported", java.util.List.of(Map.of("deviceId", deviceId("iPad"), "minutes", 10)),
                 "deliberate", false))
-                .andExpect(status().isForbidden());
-        asChild(put("/api/weeks/" + MONDAY + "/holiday"), Map.of("holiday", true))
                 .andExpect(status().isForbidden());
     }
 

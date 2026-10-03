@@ -11,6 +11,8 @@ public class RuleViolation extends RuntimeException {
         NOT_ALLOWED,
         /** There is already a session running for this user. Maps to 409. */
         SESSION_ALREADY_OPEN,
+        /** The request clashes with something already stored, such as an overlapping holiday. Maps to 409. */
+        CONFLICT,
         /** The request itself does not make sense. Maps to 400. */
         INVALID
     }
